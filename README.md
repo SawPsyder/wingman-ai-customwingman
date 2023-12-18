@@ -15,10 +15,10 @@ This wingman is based on a data dump we retrieve from the [uexcorp API](https://
 ## How to set it up?
 
 1. Download the files from this repository.
-2. Either just copy our `config.uexcorp.yaml` or rename it to `confif.yaml` and overwrite your config with it. Or you can also just copy the uexcorp wingman part from the bottom of our `config.uexcorp.yaml` file to your `config.yaml` (starting with `uex-corp:`). While doing that, you might also want to change some settings like the `record_key` or `tts_provider` and other settings. We also have some custom settings you can change what they do is written above all of them in a comment. But of course you can also change everything you can change on every other default wingman!
+2. Either just copy our `config.yaml` and overwrite yours or just copy the uexcorp wingman part from the bottom of our `config.yaml` file to your `config.yaml` (starting with `uex-corp:`). While doing that, you might also want to change some settings like the `record_key` or `tts_provider` and other settings. We also have some custom settings you can change what they do is written above all of them in a comment. But of course you can also change everything you can change on every other default wingman!
 3. Copy our `uex_corp_wingman.py` file into your `_internal\wingmen` folder.
 4. Get your own uexcorp API key [here](https://uexcorp.space/api.html). On first launch you will be asked for it.
-5. Enjoy and feel free to leave us feedback here 🙂
+5. Enjoy and feel free to leave us feedback [here](https://discord.com/channels/1173573578604687360/1179594417926066196/1185567252184047656) 🙂
 
 ## What can I do then?
 
