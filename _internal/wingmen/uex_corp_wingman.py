@@ -7,6 +7,8 @@ import itertools
 import re
 import copy
 import os
+import collections
+import heapq
 from datetime import datetime
 import requests
 from services.secret_keeper import SecretKeeper
@@ -19,6 +21,28 @@ class UEXcorpWingman(OpenAiWingman):
     """
     The UEX Corp Wingman class.
     """
+
+    MANUFACTURERS = {
+        "AEGS": "Aegis Dynamics",
+        "ANVL": "Anvil Aerospace",
+        "AOPO": "Aopoa",
+        "ARGO": "ARGO Astronautics",
+        "BANU": "Banu",
+        "CNOU": "Consolidated Outland",
+        "CRUS": "Crusader Industries",
+        "DRAK": "Drake Interplanetary",
+        "ESPR": "Esperia",
+        "GATA": "Gatac",
+        "GRIN": "Greycat Industrial",
+        "KRIG": "Kruger Intergalactic",
+        "MIRA": "Mirai",
+        "MISC": "Musashi Industrial & Starflight Concern",
+        "ORIG": "Origin Jumpworks",
+        "RSIN": "Roberts Space Industries",
+        "TMBL": "Tumbril Land Systems",
+        "VNDL": "Vanduul",
+    }
+
     def __init__(
         self,
         name: str,
@@ -52,7 +76,9 @@ class UEXcorpWingman(OpenAiWingman):
         self.cachefile = os.path.join(self.real_path, "uexcorp_cache.json")
         logging.basicConfig(filename=self.logfile, level=logging.ERROR)
 
-        self.uexcorp_version = "v6"
+        self.debug = False
+
+        self.uexcorp_version = "v7"
         self.uexcorp_api_url = ""
         self.uexcorp_timeout = 5
 
@@ -64,20 +90,40 @@ class UEXcorpWingman(OpenAiWingman):
 
         self.ships = []
         self.ship_names = []
+        self.ship_dict = {}
+        self.ship_code_dict = {}
         self.commodities = []
         self.commodity_names = []
+        self.commodity_dict = {}
+        self.commodity_code_dict = {}
         self.systems = []
         self.system_names = []
+        self.system_dict = {}
+        self.system_code_dict = {}
         self.tradeports = []
         self.tradeport_names = []
+        self.tradeport_dict = {}
+        self.tradeport_code_dict = {}
+        self.tradeports_by_system = collections.defaultdict(list)
+        self.tradeports_by_planet = collections.defaultdict(list)
+        self.tradeports_by_satellite = collections.defaultdict(list)
+        self.tradeports_by_city = collections.defaultdict(list)
         self.planets = []
         self.planet_names = []
+        self.planet_dict = {}
+        self.planet_code_dict = {}
+        self.planets_by_system = collections.defaultdict(list)
         self.satellites = []
         self.satellite_names = []
+        self.satellite_dict = {}
+        self.satellite_code_dict = {}
+        self.satellites_by_planet = collections.defaultdict(list)
         self.cities = []
         self.city_names = []
+        self.city_dict = {}
+        self.city_code_dict = {}
+        self.cities_by_planet = collections.defaultdict(list)
 
-        self.manufacturers = {}
         self.cache_enabled = True
         self.cache = {
             "function_args": {},
@@ -96,12 +142,12 @@ class UEXcorpWingman(OpenAiWingman):
         Returns:
             None
         """
-        if self.uexcorp_debug is False or (self.cache_enabled is False and self.uexcorp_debug != "Extensive"):
-            # this happens in nested function calling. should be spammed into console normally.
+        if not self.uexcorp_debug or (not self.cache_enabled and self.uexcorp_debug != "Extensive"):
             return
 
-        if self.uexcorp_debug == "Extensive" or is_extensive is False:
-            printr.print(message, tags=f"{'info' if is_extensive is False else 'warn'}")
+        if self.uexcorp_debug == "Extensive" or not is_extensive:
+            tag = 'info' if not is_extensive else 'warn'
+            printr.print(message, tags=tag)
 
     def _get_function_arg_from_cache(
         self, arg_name: str, arg_value: str | int = None
@@ -116,16 +162,17 @@ class UEXcorpWingman(OpenAiWingman):
         Returns:
             dict[str, any]: The cached value of the argument if available, otherwise the provided argument value.
         """
-        if self.cache_enabled is False:
+        if not self.cache_enabled:
             return arg_value
+
         if arg_value is None or (isinstance(arg_value, str) and arg_value.lower() == 'current'):
-            if arg_name in self.cache["function_args"]:
+            cached_arg = self.cache["function_args"].get(arg_name)
+            if cached_arg is not None:
                 self._print_debug(
-                    f"Required function arg '{arg_name}' was not given and got overwritten by cache: {self.cache['function_args'][arg_name]}"
+                    f"Required function arg '{arg_name}' was not given and got overwritten by cache: {cached_arg}"
                 )
-                return self.cache["function_args"][arg_name]
-            else:
-                return None
+                return cached_arg
+
         return arg_value
 
     def _set_function_arg_to_cache(
@@ -138,25 +185,24 @@ class UEXcorpWingman(OpenAiWingman):
             arg_name (str): The name of the argument.
             arg_value (str | int, optional): The value of the argument. Defaults to None.
         """
-        if self.cache_enabled is False:
+        if not self.cache_enabled:
             return
+
+        function_args = self.cache["function_args"]
+        old_value = function_args.get(arg_name, "None")
+
         if arg_value is not None:
-            if arg_name in self.cache["function_args"]:
-                old_value = self.cache["function_args"][arg_name]
-            else:
-                old_value = "None"
             self._print_debug(
                 f"Set function arg '{arg_name}' to cache. Previous value: {old_value} >> New value: {arg_value}",
                 True
             )
-            self.cache["function_args"][arg_name] = arg_value
-        else:
-            if arg_name in self.cache["function_args"]:
-                self._print_debug(
-                    f"Removing function arg '{arg_name}' from cache. Previous value: {self.cache['function_args'][arg_name]}",
-                    True
-                )
-                self.cache["function_args"].pop(arg_name, None)
+            function_args[arg_name] = arg_value
+        elif arg_name in function_args:
+            self._print_debug(
+                f"Removing function arg '{arg_name}' from cache. Previous value: {old_value}",
+                True
+            )
+            function_args.pop(arg_name, None)
 
     def validate(self) -> list[str]:
         """
@@ -180,18 +226,16 @@ class UEXcorpWingman(OpenAiWingman):
             )
 
         # add custom errors
-        if not self.config.get("uexcorp_api_url"):
-            errors.append("Missing 'uexcorp_api_url' in config.yaml")
-        if not self.config.get("uexcorp_api_timeout"):
-            errors.append("Missing 'uexcorp_api_timeout' in config.yaml")
-        if self.config.get("uexcorp_debug") is None:
-            errors.append("Missing 'uexcorp_debug' in config.yaml")
-        if not self.config.get("uexcorp_cache"):
-            errors.append("Missing 'uexcorp_cache' in config.yaml")
-        if not self.config.get("uexcorp_cache_duration"):
-            errors.append("Missing 'uexcorp_cache_duration' in config.yaml")
-        if self.config.get("uexcorp_additional_context") is None:
-            errors.append("Missing 'uexcorp_additional_context' in config.yaml")
+        config_keys = ["uexcorp_api_url", "uexcorp_api_timeout", "uexcorp_cache", "uexcorp_cache_duration"]
+        none_keys = ["uexcorp_debug", "uexcorp_additional_context"]
+
+        for key in config_keys:
+            if not self.config.get(key):
+                errors.append(f"Missing '{key}' in config.yaml")
+
+        for key in none_keys:
+            if self.config.get(key) is None:
+                errors.append(f"Missing '{key}' in config.yaml")
 
         return errors
 
@@ -203,11 +247,7 @@ class UEXcorpWingman(OpenAiWingman):
             reload (bool, optional): Whether to reload the data from the source. Defaults to False.
         """
 
-        self.debug = self.config.get("features", {}).get(
-            "debug_mode", False
-        )
         boo_tradeports_reloaded = False
-
 
         save_cache = False
         # if cache is enabled and file is not too old, load from cache
@@ -370,6 +410,10 @@ class UEXcorpWingman(OpenAiWingman):
         """
         # here validate() already ran, so we can safely access the config
 
+        self.debug = self.config.get("features", {}).get(
+            "debug_mode", False
+        )
+
         self.uexcorp_api_url = self.config.get("uexcorp_api_url")
         self.uexcorp_timeout = self.config.get("uexcorp_timeout")
         self.uexcorp_debug = self.config.get("uexcorp_debug")
@@ -377,86 +421,88 @@ class UEXcorpWingman(OpenAiWingman):
         self.uexcorp_cache_duration = self.config.get("uexcorp_cache_duration")
         self.uexcorp_additional_context = self.config.get("uexcorp_additional_context")
 
-        self.manufacturers = {
-            "AEGS": "Aegis Dynamics",
-            "ANVL": "Anvil Aerospace",
-            "AOPO": "Aopoa",
-            "ARGO": "ARGO Astronautics",
-            "BANU": "Banu",
-            "CNOU": "Consolidated Outland",
-            "CRUS": "Crusader Industries",
-            "DRAK": "Drake Interplanetary",
-            "ESPR": "Esperia",
-            "GATA": "Gatac",
-            "GRIN": "Greycat Industrial",
-            "KRIG": "Kruger Intergalactic",
-            "MIRA": "Mirai",
-            "MISC": "Musashi Industrial & Starflight Concern",
-            "ORIG": "Origin Jumpworks",
-            "RSIN": "Roberts Space Industries",
-            "TMBL": "Tumbril Land Systems",
-            "VNDL": "Vanduul",
-        }
-
         self.start_execution_benchmark()
         self._load_data()
-
-        additional_context = []
 
         self.ship_names = [
             self._format_ship_name(ship)
             for ship in self.ships
             if ship["implemented"] == "1"
         ]
-        additional_context.append(
-            'Possible values for function parameter "shipName". If none is explicitly given by player, use "None": '
-            + ", ".join(self.ship_names)
-        )
+        self.ship_dict = {self._format_ship_name(ship).lower(): ship for ship in self.ships}
+        self.ship_code_dict = {ship["code"].lower(): ship for ship in self.ships}
 
         self.commodity_names = [
             self._format_commodity_name(commodity) for commodity in self.commodities
         ]
-        additional_context.append(
-            'Possible values for function parameter "commodityName": '
-            + ", ".join(self.commodity_names)
-        )
+        self.commodity_dict = {self._format_commodity_name(commodity).lower(): commodity for commodity in self.commodities}
+        self.commodity_code_dict = {commodity["code"].lower(): commodity for commodity in self.commodities}
 
         self.system_names = [
             self._format_system_name(system) for system in self.systems
         ]
+        self.system_dict = {self._format_system_name(system).lower(): system for system in self.systems}
+        self.system_code_dict = {system["code"].lower(): system for system in self.systems}
 
         self.tradeport_names = [
             self._format_tradeport_name(tradeport) for tradeport in self.tradeports
         ]
+        self.tradeport_dict = {self._format_tradeport_name(tradeport).lower(): tradeport for tradeport in self.tradeports}
+        self.tradeport_code_dict = {tradeport["code"].lower(): tradeport for tradeport in self.tradeports}
+        for tradeport in self.tradeports:
+            self.tradeports_by_system[tradeport["system"].lower()].append(tradeport)
+            self.tradeports_by_planet[tradeport["planet"].lower()].append(tradeport)
+            self.tradeports_by_satellite[tradeport["satellite"].lower()].append(tradeport)
+            self.tradeports_by_city[tradeport["city"].lower()].append(tradeport)
 
-        self.city_names = [self._format_city_name(city) for city in self.cities]
+        self.city_names = [
+            self._format_city_name(city) for city in self.cities
+        ]
+        self.city_dict = {self._format_city_name(city).lower(): city for city in self.cities}
+        self.city_code_dict = {city["code"].lower(): city for city in self.cities}
+        for city in self.cities:
+            self.cities_by_planet[city["planet"].lower()].append(city)
 
         self.satellite_names = [
             self._format_satellite_name(satellite) for satellite in self.satellites
         ]
+        self.satellite_dict = {self._format_satellite_name(satellite).lower(): satellite for satellite in self.satellites}
+        self.satellite_code_dict = {satellite["code"].lower(): satellite for satellite in self.satellites}
+        for satellite in self.satellites:
+            self.satellites_by_planet[satellite["planet"].lower()].append(satellite)
 
         self.planet_names = [
             self._format_planet_name(planet) for planet in self.planets
         ]
-
-        additional_context.append(
-            'Possible values for function parameters "positionStartName", "positionEndName", "currentPositionName" and "locationName": '
-            + ", ".join(
-                self.system_names
-                + self.tradeport_names
-                + self.city_names
-                + self.satellite_names
-                + self.planet_names
-            )
-        )
-        # additional_context.append("Do not (never) translate any properties when giving them to the player. They must stay untouched.")
-        # additional_context.append("But do always try to translate the values the player gives you, if they doesnt match initially.")
+        self.planet_dict = {self._format_planet_name(planet).lower(): planet for planet in self.planets}
+        self.planet_code_dict = {planet["code"].lower(): planet for planet in self.planets}
+        for planet in self.planets:
+            self.planets_by_system[planet["system"].lower()].append(planet)
 
         if self.uexcorp_additional_context:
-            self._add_context("\n".join(additional_context))
-        self._add_context("\nOnly give functions parameters that were previously clearly provided by a request. Never assume any values, not the current ship, not the location, not the available money, nothing! Always send a None-value instead.")
-        self._add_context("\nIf you are not using one of the definied functions, dont give any trading recommendations.")
-        self._add_context("\nIf you execute a function that requires a commodity name, make sure to always provide the name in english, not in german or any other language.")
+            self._add_context(
+                'Possible values for function parameter "shipName". If none is explicitly given by player, use "None": '
+                + ", ".join(self.ship_names)
+                + "\n\n"
+                + 'Possible values for function parameter "commodityName": '
+                + ", ".join(self.commodity_names)
+                + "\n\n"
+                + 'Possible values for function parameters "positionStartName", "positionEndName", "currentPositionName" and "locationName": '
+                + ", ".join(
+                    self.system_names
+                    + self.tradeport_names
+                    + self.city_names
+                    + self.satellite_names
+                    + self.planet_names
+                )
+            )
+
+        self._add_context(
+            "\nDo not (never) translate any properties when giving them to the player. They must stay in english or untouched."
+            + "\nOnly give functions parameters that were previously clearly provided by a request. Never assume any values, not the current ship, not the location, not the available money, nothing! Always send a None-value instead."
+            + "\nIf you are not using one of the definied functions, dont give any trading recommendations."
+            + "\nIf you execute a function that requires a commodity name, make sure to always provide the name in english, not in german or any other language."
+        )
 
     def _add_context(self, content: str):
         """
@@ -499,33 +545,26 @@ class UEXcorpWingman(OpenAiWingman):
 
         self._print_debug(f"Searching for closest match to '{search}' in list.", True)
 
-        if search in lst:
-            self._print_debug(f"Found exact match to '{search}' in list.", True)
-            return search
-
         # create checksum of provided list and search term
         checksum = f"{len(lst)}--{lst[0]}--{search}".replace(" ", "")
         if checksum in self.cache["search_matches"]:
             self._print_debug(f"Found closest match to '{search}' in cache.", True)
             return self.cache["search_matches"][checksum]
 
+        if search in lst:
+            self._print_debug(f"Found exact match to '{search}' in list.", True)
+            return search
+
         # make a list of possible matches
-        closest_matches = []
         closest_matches = difflib.get_close_matches(search, lst, n=10, cutoff=0.2)
         if len(search) < 3:
             # find all matches, that contain the search term
-            for item in lst:
-                if search.lower() in item.lower():
-                    closest_matches.append(item)
+            closest_matches.extend(item for item in lst if search.lower() in item.lower())
         self._print_debug(f"Making a list for closest matches for search term '{search}': {', '.join(closest_matches)}", True)
 
-        # dumb matches
-        if len(closest_matches) == 0:
+        if not closest_matches:
             self._print_debug(f"No closest match found for '{search}' in list. Returning None.", True)
             return None
-        # if len(closest_matches) == 1:
-        #     self._print_debug(f"Found only one closest match to '{search}' in list: '{closest_matches[0]}'", True)
-        #     return closest_matches[0]
 
         # openai matches
         response = self.openai.ask(
@@ -534,10 +573,10 @@ class UEXcorpWingman(OpenAiWingman):
                     "content": f"""
                         I'll give you just a string value.
                         You will figure out, what value in this list represents this value best: {', '.join(closest_matches)}
-                        Keep in mind that the given string value can be misspelled or has missing words as it has its origin in a speach to text process.
+                        Keep in mind that the given string value can be misspelled or has missing words as it has its origin in a speech to text process.
                         You must only return the value of the closest match to the given value from the defined list, nothing else.
                         For example if "Hercules A2" is given and the list contains of "A2, C2, M2", you will return "A2" as string.
-                        Or if "C2" is given and the list contais of "A2 Herculas Star Lifter, C2 Monter Truck, M2 Extreme cool ship", you will return "C2 Monter Truck" as string.
+                        Or if "C2" is given and the list contains of "A2 Hercules Star Lifter, C2 Monster Truck, M2 Extreme cool ship", you will return "C2 Monster Truck" as string.
                         On longer search terms, prefer the exact match, if it is in the list.
                         The response must not contain anything else, than the exact value of the closest match from the list.
                         If you can't find a match, return 'None'. Do never return the given search value.
@@ -552,18 +591,12 @@ class UEXcorpWingman(OpenAiWingman):
             model="gpt-3.5-turbo-1106",
         )
         answer = response.choices[0].message.content
-        if answer == "None":
-            self._print_debug(f"OpenAI says this is the closest match: '{answer}'. Returning None.", True)
-            self.cache["search_matches"][checksum] = None
+
+        if answer == "None" or answer not in closest_matches:
+            self._print_debug(f"No closest match found for '{search}' in list. Returning None.", True)
             return None
 
-        if answer not in closest_matches:
-            self._print_debug(f"OpenAI says this is the closest match: '{answer}'. But it is not in the list of possible matches. Returning None.", True)
-            self.cache["search_matches"][checksum] = None
-            return None
-
-        self._print_debug(f"OpenAI says this is the closest match: '{answer}'.", True)
-        self._add_context(f"\nAlways say '{answer}' instead of '{search}'.") # Say the correct stuff, not the rubbish that was understood.
+        self._print_debug(f"Found closest match to '{search}' in list: '{answer}'", True)
         self.cache["search_matches"][checksum] = answer
         return answer
 
@@ -593,18 +626,24 @@ class UEXcorpWingman(OpenAiWingman):
         """
         url = f"{self.uexcorp_api_url}/{endpoint}"
 
-        response = requests.get(
-            url, params=params, timeout=self.uexcorp_timeout, headers=self._get_header()
-        )
-        response.raise_for_status()
+        try:
+            response = requests.get(
+                url, params=params, timeout=self.uexcorp_timeout, headers=self._get_header()
+            )
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            self._print_debug(f"Error while retrieving data from {url}: {e}")
+            return []
+
         if self.debug:
             self.print_execution_time(reset_timer=True)
 
-        if response.json()["status"] != "ok":
-            Printr.err_print(f"Error while retrieving data from {url}")
+        response_json = response.json()
+        if "status" not in response_json or response_json["status"] != "ok":
+            self._print_debug(f"Error while retrieving data from {url}")
             return []
 
-        return response.json()["data"]
+        return response_json.get("data", [])
 
     def _format_ship_name(self, ship: dict[str, any]) -> str:
         """
@@ -1020,32 +1059,27 @@ class UEXcorpWingman(OpenAiWingman):
             return "No commodity given. Ask for a commodity."
 
         misunderstood = []
-        if (
-            commodityName is not None
-            and self._find_closest_match(commodityName, self.commodity_names) is None
-        ):
+        closest_match = self._find_closest_match(commodityName, self.commodity_names)
+        if closest_match is None:
             misunderstood.append(f"Commodity: {commodityName}")
         else:
-            commodityName = self._find_closest_match(commodityName, self.commodity_names)
-            # commodity name not set to cache, as this is likely not about the current commodity
-            # self._set_function_arg_to_cache("commodityName", commodityName)
+            commodityName = closest_match
 
         self._print_debug(f"Interpreted Parameters: Commodity: {commodityName}")
 
-        if len(misunderstood) > 0:
+        if misunderstood:
+            misunderstood_str = ", ".join(misunderstood)
             self._print_debug(
-                "These given parameters do not exist in game. Exactly ask for clarification of these values: "
-                + ", ".join(misunderstood),
+                f"These given parameters do not exist in game. Exactly ask for clarification of these values: {misunderstood_str}",
                 True
             )
-            return "These given parameters do not exist in game. Exactly ask for clarification of these values: " + ", ".join(
-                misunderstood
-            )
+            return f"These given parameters do not exist in game. Exactly ask for clarification of these values: {misunderstood_str}"
 
         commodity = self._get_commodity_by_name(commodityName)
         if commodity is not None:
-            self._print_debug(self._get_converted_commodity_for_output(commodity), True)
-            return json.dumps(self._get_converted_commodity_for_output(commodity))
+            output_commodity = self._get_converted_commodity_for_output(commodity)
+            self._print_debug(output_commodity, True)
+            return json.dumps(output_commodity)
 
     def _get_ship_information(self, shipName: str = None) -> str:
         """
@@ -1070,32 +1104,27 @@ class UEXcorpWingman(OpenAiWingman):
             return "No ship given. Ask for a ship. Dont say sorry."
 
         misunderstood = []
-        if (
-            shipName is not None
-            and self._find_closest_match(shipName, self.ship_names) is None
-        ):
+        closest_match = self._find_closest_match(shipName, self.ship_names)
+        if closest_match is None:
             misunderstood.append(f"Ship: {shipName}")
         else:
-            shipName = self._find_closest_match(shipName, self.ship_names)
-            # ship name not set, as this is likely not about the current ship
-            # self._set_function_arg_to_cache("shipName", shipName)
+            shipName = closest_match
 
         self._print_debug(f"Interpreted Parameters: Ship: {shipName}")
 
-        if len(misunderstood) > 0:
+        if misunderstood:
+            misunderstood_str = ", ".join(misunderstood)
             self._print_debug(
-                "These given parameters do not exist in game. Exactly ask for clarification of these values: "
-                + ", ".join(misunderstood),
+                f"These given parameters do not exist in game. Exactly ask for clarification of these values: {misunderstood_str}",
                 True
             )
-            return "These given parameters do not exist in game. Exactly ask for clarification of these values: " + ", ".join(
-                misunderstood
-            )
+            return f"These given parameters do not exist in game. Exactly ask for clarification of these values: {misunderstood_str}"
 
         ship = self._get_ship_by_name(shipName)
         if ship is not None:
-            self._print_debug(self._get_converted_ship_for_output(ship), True)
-            return json.dumps(self._get_converted_ship_for_output(ship))
+            output_ship = self._get_converted_ship_for_output(ship)
+            self._print_debug(output_ship, True)
+            return json.dumps(output_ship)
 
     def _get_location_information(self, locationName: str = None) -> str:
         """
@@ -1119,64 +1148,49 @@ class UEXcorpWingman(OpenAiWingman):
             return "No location given. Ask for a location."
 
         misunderstood = []
-        if (
-            locationName is not None
-            and self._find_closest_match(
-                locationName,
-                self.tradeport_names
-                + self.city_names
-                + self.satellite_names
-                + self.planet_names
-                + self.system_names,
-            )
-            is None
-        ):
+        all_names = self.tradeport_names + self.city_names + self.satellite_names + self.planet_names + self.system_names
+        closest_match = self._find_closest_match(locationName, all_names)
+        if closest_match is None:
             misunderstood.append(f"Location: {locationName}")
         else:
-            locationName = self._find_closest_match(
-                locationName,
-                self.tradeport_names
-                + self.city_names
-                + self.satellite_names
-                + self.planet_names
-                + self.system_names,
-            )
-            # location name not set, as this is likely not about the current location
-            # self._set_function_arg_to_cache("locationName", locationName)
+            locationName = closest_match
 
         self._print_debug(f"Interpreted Parameters: Location: {locationName}")
 
-        if len(misunderstood) > 0:
+        if misunderstood:
+            misunderstood_str = ", ".join(misunderstood)
             self._print_debug(
-                "These given parameters do not exist in game. Exactly ask for clarification of these values: "
-                + ", ".join(misunderstood),
+                f"These given parameters do not exist in game. Exactly ask for clarification of these values: {misunderstood_str}",
                 True
             )
-            return "These given parameters do not exist in game. Exactly ask for clarification of these values: " + ", ".join(
-                misunderstood
-            )
+            return f"These given parameters do not exist in game. Exactly ask for clarification of these values: {misunderstood_str}"
 
         # get a clone of the data
         tradeport = self._get_tradeport_by_name(locationName)
         if tradeport is not None:
-            self._print_debug(self._get_converted_tradeport_for_output(tradeport), True)
-            return json.dumps(self._get_converted_tradeport_for_output(tradeport))
+            output_tradeport = self._get_converted_tradeport_for_output(tradeport)
+            self._print_debug(output_tradeport, True)
+            return json.dumps(output_tradeport)
         city = self._get_city_by_name(locationName)
         if city is not None:
-            self._print_debug(self._get_converted_city_for_ouput(city), True)
-            return json.dumps(self._get_converted_city_for_ouput(city))
+            output_city = self._get_converted_city_for_ouput(city)
+            self._print_debug(output_city, True)
+            return json.dumps(output_city)
         satellite = self._get_satellite_by_name(locationName)
         if satellite is not None:
-            self._print_debug(self._get_converted_satellite_for_ouput(satellite), True)
-            return json.dumps(self._get_converted_satellite_for_ouput(satellite))
+            output_satellite = self._get_converted_satellite_for_ouput(satellite)
+            self._print_debug(output_satellite, True)
+            return json.dumps(output_satellite)
         planet = self._get_planet_by_name(locationName)
         if planet is not None:
-            self._print_debug(self._get_converted_planet_for_ouput(planet), True)
-            return json.dumps(self._get_converted_planet_for_ouput(planet))
+            output_planet = self._get_converted_planet_for_ouput(planet)
+            self._print_debug(output_planet, True)
+            return json.dumps(output_planet)
         system = self._get_system_by_name(locationName)
         if system is not None:
-            self._print_debug(self._get_converted_system_for_ouput(system), True)
-            return json.dumps(self._get_converted_system_for_ouput(system))
+            output_system = self._get_converted_system_for_ouput(system)
+            self._print_debug(output_system, True)
+            return json.dumps(output_system)
 
     def _get_converted_tradeport_for_output(self, tradeport: dict[str, any]) -> dict[str, any]:
         """
@@ -1207,32 +1221,19 @@ class UEXcorpWingman(OpenAiWingman):
         tradeport["planet"] = self._get_planet_name_by_code(tradeport["planet"])
         tradeport["city"] = self._get_city_name_by_code(tradeport["city"])
         tradeport["satellite"] = self._get_satellite_name_by_code(tradeport["satellite"])
-        if tradeport["hull_trading"] is True:
-            tradeport["hull_trading"] = "Trading with MISC Hull C is possible."
-        else:
-            tradeport["hull_trading"] = "Trading with MISC Hull C is not possible."
+        tradeport["hull_trading"] = "Trading with MISC Hull C is possible." if tradeport["hull_trading"] else "Trading with MISC Hull C is not possible."
 
-        buyable_commodities = []
-        sellable_commodities = []
-        for commodity_code, data in tradeport["prices"].items():
-            if data["operation"] == "buy":
-                buyable_commodities.append(f"{data['name']} for {data['price_buy']} aUEC per SCU")
-            if data["operation"] == "sell":
-                sellable_commodities.append(f"{data['name']} for {data['price_sell']} aUEC per SCU")
+        buyable_commodities = [f"{data['name']} for {data['price_buy']} aUEC per SCU" for commodity_code, data in tradeport["prices"].items() if data["operation"] == "buy"]
+        sellable_commodities = [f"{data['name']} for {data['price_sell']} aUEC per SCU" for commodity_code, data in tradeport["prices"].items() if data["operation"] == "sell"]
 
-        if len(buyable_commodities) > 0:
+        if buyable_commodities:
             tradeport["buyable_commodities"] = ", ".join(buyable_commodities)
-        if len(sellable_commodities) > 0:
+        if sellable_commodities:
             tradeport["sellable_commodities"] = ", ".join(sellable_commodities)
 
-        if not tradeport["system"]:
-            deletable_keys.append("system")
-        if not tradeport["planet"]:
-            deletable_keys.append("planet")
-        if not tradeport["city"]:
-            deletable_keys.append("city")
-        if not tradeport["satellite"]:
-            deletable_keys.append("satellite")
+        for key in ["system", "planet", "city", "satellite"]:
+            if tradeport.get(key) is None:
+                deletable_keys.append(key)
 
         for key in deletable_keys:
             tradeport.pop(key, None)
@@ -1240,7 +1241,7 @@ class UEXcorpWingman(OpenAiWingman):
         self.cache["readable_objects"][checksum] = tradeport
         return tradeport
 
-    def _get_converted_city_for_ouput(self, city: dict[str, any]) -> dict[str, any]:
+    def _get_converted_city_for_output(self, city: dict[str, any]) -> dict[str, any]:
         """
         Converts a city dictionary to a dictionary that can be used as output.
 
@@ -1265,7 +1266,8 @@ class UEXcorpWingman(OpenAiWingman):
         city["system"] = self._get_system_name_by_code(city["system"])
         city["planet"] = self._get_planet_name_by_code(city["planet"])
         tradeports = self._get_tradeports_by_positionname(city["name"], True)
-        if len(tradeports) > 0:
+
+        if tradeports:
             city["options_to_trade"] = ", ".join([self._format_tradeport_name(tradeport) for tradeport in tradeports])
 
         for key in deletable_keys:
@@ -1274,7 +1276,7 @@ class UEXcorpWingman(OpenAiWingman):
         self.cache["readable_objects"][checksum] = city
         return city
 
-    def _get_converted_satellite_for_ouput(self, satellite: dict[str, any]) -> dict[str, any]:
+    def _get_converted_satellite_for_output(self, satellite: dict[str, any]) -> dict[str, any]:
         """
         Converts a satellite dictionary to a dictionary that can be used as output.
 
@@ -1299,7 +1301,8 @@ class UEXcorpWingman(OpenAiWingman):
         satellite["system"] = self._get_system_name_by_code(satellite["system"])
         satellite["planet"] = self._get_planet_name_by_code(satellite["planet"])
         tradeports = self._get_tradeports_by_positionname(satellite["name"], True)
-        if len(tradeports) > 0:
+
+        if tradeports:
             satellite["options_to_trade"] = ", ".join([self._format_tradeport_name(tradeport) for tradeport in tradeports])
 
         for key in deletable_keys:
@@ -1308,7 +1311,7 @@ class UEXcorpWingman(OpenAiWingman):
         self.cache["readable_objects"][checksum] = satellite
         return satellite
 
-    def _get_converted_planet_for_ouput(self, planet: dict[str, any]) -> dict[str, any]:
+    def _get_converted_planet_for_output(self, planet: dict[str, any]) -> dict[str, any]:
         """
         Converts a planet dictionary to a dictionary that can be used as output.
 
@@ -1332,13 +1335,16 @@ class UEXcorpWingman(OpenAiWingman):
         planet["type"] = "Planet"
         planet["system"] = self._get_system_name_by_code(planet["system"])
         tradeports = self._get_tradeports_by_positionname(planet["name"], True)
-        if len(tradeports) > 0:
+
+        if tradeports:
             planet["options_to_trade"] = ", ".join([self._format_tradeport_name(tradeport) for tradeport in tradeports])
+
         satellites = self._get_satellites_by_planetcode(planet["code"])
-        if len(satellites) > 0:
+        if satellites:
             planet["satellites"] = ", ".join([self._format_satellite_name(satellite) for satellite in satellites])
+
         cities = self._get_cities_by_planetcode(planet["code"])
-        if len(cities) > 0:
+        if cities:
             planet["cities"] = ", ".join([self._format_city_name(city) for city in cities])
 
         for key in deletable_keys:
@@ -1347,7 +1353,7 @@ class UEXcorpWingman(OpenAiWingman):
         self.cache["readable_objects"][checksum] = planet
         return planet
 
-    def _get_converted_system_for_ouput(self, system: dict[str, any]) -> dict[str, any]:
+    def _get_converted_system_for_output(self, system: dict[str, any]) -> dict[str, any]:
         """
         Converts a system dictionary to a dictionary that can be used as output.
 
@@ -1371,10 +1377,12 @@ class UEXcorpWingman(OpenAiWingman):
         ]
         system["type"] = "System"
         tradeports = self._get_tradeports_by_positionname(system["name"], True)
-        if len(tradeports) > 0:
+
+        if tradeports:
             system["options_to_trade"] = ", ".join([self._format_tradeport_name(tradeport) for tradeport in tradeports])
+
         planets = self._get_planets_by_systemcode(system["code"])
-        if len(planets) > 0:
+        if planets:
             system["planets"] = ", ".join([self._format_planet_name(planet) for planet in planets])
 
         for key in deletable_keys:
@@ -1419,26 +1427,21 @@ class UEXcorpWingman(OpenAiWingman):
         ]
         ship["type"] = "Ship"
         ship["manufacturer"] = (
-            self.manufacturers[ship["manufacturer"]]
-            if ship["manufacturer"] in self.manufacturers
+            self.MANUFACTURERS[ship["manufacturer"]]
+            if ship["manufacturer"] in self.MANUFACTURERS
             else ship["manufacturer"]
         )
         ship["cargo"] = f"{ship['scu']} SCU"
         ship["price_USD"] = f"{ship['price']}"
-        if not ship["buy_at"]:
-            ship["buy_at"] = "This ship cannot be bought."
-        else:
-            temp = ship["buy_at"]
-            ship["buy_at"] = []
-            for position in temp:
-                ship["buy_at"].append(self._get_converted_rent_and_buy_option_for_output(position))
-        if not ship["rent_at"]:
-            ship["rent_at"] = "This ship cannot be rented."
-        else:
-            temp = ship["rent_at"]
-            ship["rent_at"] = []
-            for position in temp:
-                ship["rent_at"].append(self._get_converted_rent_and_buy_option_for_output(position))
+
+        ship["buy_at"] = "This ship cannot be bought." if not ship["buy_at"] else [
+            self._get_converted_rent_and_buy_option_for_output(position) for position in ship["buy_at"]
+        ]
+
+        ship["rent_at"] = "This ship cannot be rented." if not ship["rent_at"] else [
+            self._get_converted_rent_and_buy_option_for_output(position) for position in ship["rent_at"]
+        ]
+
         if ship["hull_trading"] is True:
             ship["trading_info"] = "This ship can only trade on suitable space stations with a cargo deck."
 
@@ -1461,63 +1464,39 @@ class UEXcorpWingman(OpenAiWingman):
             dict[str, any]: The converted rent/buy option dictionary.
         """
         position = copy.deepcopy(position)
+        keys = ["system", "planet", "satellite", "city", "store"]
         if not position["tradeport"]:
-            if not position["system"]:
-                position.pop("system", None)
-            else:
-                position["system"] = position["system_name"]
-            if not position["planet"]:
-                position.pop("planet", None)
-            else:
-                position["planet"] = position["planet_name"]
-            if not position["satellite"]:
-                position.pop("satellite", None)
-            else:
-                position["satellite"] = position["satellite_name"]
-            if not position["city"]:
-                position.pop("city", None)
-            else:
-                position["city"] = position["city_name"]
-            if not position["store"]:
-                position.pop("store", None)
-            else:
-                position["store"] = position["store_name"]
+            for key in keys:
+                if not position[key]:
+                    position.pop(key, None)
+                else:
+                    position[key] = position[f"{key}_name"]
             position.pop("tradeport", None)
         else:
             tradeport = self._get_tradeport_by_code(position["tradeport"])
             position["tradeport"] = self._format_tradeport_name(tradeport)
-            system_name = self._get_system_name_by_code(tradeport["system"])
-            if system_name:
-                position["system"] = self._get_system_name_by_code(tradeport["system"])
-            else:
-                position.pop("system", None)
-            planet_name = self._get_planet_name_by_code(tradeport["planet"])
-            if planet_name:
-                position["planet"] = planet_name
-            else:
-                position.pop("planet", None)
-            city_name = self._get_city_name_by_code(tradeport["city"])
-            if city_name:
-                position["city"] = city_name
-            else:
-                position.pop("city", None)
-            satellite_name = self._get_satellite_name_by_code(tradeport["satellite"])
-            if satellite_name:
-                position["satellite"] = satellite_name
-            else:
-                position.pop("satellite", None)
-            position["store"] = "Refinery" # TODO: remove this when refinery is implemented
+            for key in keys:
+                name = getattr(self, f"_get_{key}_name_by_code")(tradeport[key])
+                if name:
+                    position[key] = name
+                else:
+                    position.pop(key, None)
+            position["store"] = "Refinery"  # TODO: remove this when refinery is implemented
         position["price"] = f"{position['price']} aUEC"
 
-        position.pop("tradeport_name", None)
-        position.pop("system_name", None)
-        position.pop("planet_name", None)
-        position.pop("satellite_name", None)
-        position.pop("tradeport_name", None)
-        position.pop("city_name", None)
-        position.pop("store_name", None)
-        position.pop("date_added", None)
-        position.pop("date_modified", None)
+        keys_to_remove = [
+            "tradeport_name",
+            "system_name",
+            "planet_name",
+            "satellite_name",
+            "tradeport_name",
+            "city_name",
+            "store_name",
+            "date_added",
+            "date_modified",
+        ]
+        for key in keys_to_remove:
+            position.pop(key, None)
 
         return position
 
@@ -1539,8 +1518,6 @@ class UEXcorpWingman(OpenAiWingman):
         deletable_keys = [
             "code",
             "tradable",
-            "trade_price_buy",
-            "trade_price_sell",
             "temporary",
             "restricted",
             "raw",
@@ -1548,28 +1525,19 @@ class UEXcorpWingman(OpenAiWingman):
             "date_added",
             "date_modified",
         ]
-        if commodity["trade_price_buy"] == 0:
-            commodity["buyable"] = "No"
-            deletable_keys.append("trade_price_buy")
-        else:
-            commodity["buyable"] = f"Yes ({int(commodity['trade_price_buy'])} aUEC per SCU)"
-        if commodity["trade_price_sell"] == 0:
-            commodity["sellable"] = "No"
-            deletable_keys.append("trade_price_sell")
-        else:
-            commodity["sellable"] = f"Yes ({int(commodity['trade_price_sell'])} aUEC per SCU)"
-        if commodity["minable"] == '0':
-            commodity["minable"] = "No"
-        else:
-            commodity["minable"] = "Yes"
-        if commodity["harvestable"] == '0':
-            commodity["harvestable"] = "No"
-        else:
-            commodity["harvestable"] = "Yes"
-        if commodity["illegal"] == '0':
-            commodity["illegal"] = "No"
-        else:
-            commodity["illegal"] = "Yes, stay away from ship scanns to avoid fines and crimestat."
+        price_keys = ["trade_price_buy", "trade_price_sell"]
+        for key in price_keys:
+            if commodity[key] == 0:
+                commodity[key.replace("trade_price_", "")] = "No"
+                deletable_keys.append(key)
+            else:
+                commodity[key.replace("trade_price_", "")] = f"Yes ({int(commodity[key])} aUEC per SCU)"
+
+        boolean_keys = ["minable", "harvestable", "illegal"]
+        for key in boolean_keys:
+            commodity[key] = "Yes" if commodity[key] != '0' else "No"
+        if commodity["illegal"] == "Yes":
+            commodity["illegal"] += ", stay away from ship scanns to avoid fines and crimestat."
 
         for key in deletable_keys:
             commodity.pop(key, None)
@@ -1585,19 +1553,6 @@ class UEXcorpWingman(OpenAiWingman):
         commodityAmount: int = 1,
         maximalNumberOfLocations: int = 3,
     ) -> str:
-        """
-        Finds the best selling locations for a given commodity and position.
-
-        Args:
-            commodityName (str, optional): The name of the commodity. Defaults to None.
-            shipName (str, optional): The name of the ship. Defaults to None.
-            positionName (str, optional): The name of the current position. Defaults to None.
-            commodityAmount (int, optional): The amount of the commodity. Defaults to 1.
-            maximalNumberOfLocations (int, optional): The maximal number of locations to be returned. Defaults to 3.
-
-        Returns:
-            str: A string containing information about the best selling location(s) and sell prices.
-        """
         self._print_debug("Called custom function _get_multiple_best_location_to_sell_to")
         self._print_debug(
             f"Given Parameters: Commodity: {commodityName}, Ship Name: {shipName}, Current Position: {positionName}, Amount: {commodityAmount}, Maximal Number of Locations: {maximalNumberOfLocations}"
@@ -1606,57 +1561,28 @@ class UEXcorpWingman(OpenAiWingman):
         commodityName = self._get_function_arg_from_cache("commodityName", commodityName)
         shipName = self._get_function_arg_from_cache("shipName", shipName)
 
-        if commodityName is None:
-            self._print_debug("No commodity given. Ask for a commodity.", True)
-            return "No commodity given. Ask for a commodity."
+        name_to_list = {
+            "commodityName": (commodityName, self.commodity_names),
+            "shipName": (shipName, self.ship_names),
+            "positionName": (positionName, self.tradeport_names + self.city_names + self.satellite_names + self.planet_names + self.system_names),
+        }
 
         misunderstood = []
-        if (
-            commodityName is not None
-            and self._find_closest_match(commodityName, self.commodity_names) is None
-        ):
-            misunderstood.append(f"Commodity: {commodityName}")
-        else:
-            commodityName = self._find_closest_match(
-                commodityName, self.commodity_names
-            )
-            self._set_function_arg_to_cache("commodityName", commodityName)
-        if (
-            shipName is not None
-            and self._find_closest_match(shipName, self.ship_names) is None
-        ):
-            misunderstood.append(f"Ship: {shipName}")
-        else:
-            shipName = self._find_closest_match(shipName, self.ship_names)
-            self._set_function_arg_to_cache("shipName", shipName)
-        if (
-            positionName is not None
-            and self._find_closest_match(
-                positionName,
-                self.tradeport_names
-                + self.city_names
-                + self.satellite_names
-                + self.planet_names
-                + self.system_names,
-            )
-            is None
-        ):
-            misunderstood.append(f"Current Position: {positionName}")
-        else:
-            positionName = self._find_closest_match(
-                positionName,
-                self.tradeport_names
-                + self.city_names
-                + self.satellite_names
-                + self.planet_names
-                + self.system_names,
-            )
-            self._set_function_arg_to_cache("locationName", positionName)
+        for name, (value, list_) in name_to_list.items():
+            if value is not None and self._find_closest_match(value, list_) is None:
+                misunderstood.append(f"{name}: {value}")
+            else:
+                name_to_list[name] = (self._find_closest_match(value, list_), list_)
+
+        for name, (value, _) in name_to_list.items():
+            if value is not None:
+                self._set_function_arg_to_cache(name, value)
+
         self._print_debug(
-            f"Interpreted Parameters: Commodity: {commodityName}, Ship Name: {shipName}, Position: {positionName}, Amount: {commodityAmount}"
+            f"Interpreted Parameters: Commodity: {commodityName}, Ship Name: {shipName}, Position: {positionName}, Amount: {commodityAmount}, Maximal Number of Locations: {maximalNumberOfLocations}"
         )
 
-        if len(misunderstood) > 0:
+        if misunderstood:
             self._print_debug(
                 "These given parameters do not exist in game. Exactly ask for clarification of these values: "
                 + ", ".join(misunderstood),
@@ -1666,40 +1592,26 @@ class UEXcorpWingman(OpenAiWingman):
                 misunderstood
             )
 
-        if positionName is None:
-            tradeports = self.tradeports
-        else:
-            tradeports = self._get_tradeports_by_positionname(positionName)
+        tradeports = self.tradeports if positionName is None else self._get_tradeports_by_positionname(positionName)
         commodity = self._get_commodity_by_name(commodityName)
         ship = self._get_ship_by_name(shipName)
-        if commodityAmount is None:
-            amount = 1
-        else:
-            amount = int(commodityAmount)
-        if amount < 1:
-            amount = 1
-        maximal_number_of_locations = int(maximalNumberOfLocations)
-        if maximal_number_of_locations < 1:
-            maximal_number_of_locations = 3
+        amount = max(1, int(commodityAmount or 1))
+        maximal_number_of_locations = max(1, int(maximalNumberOfLocations))
 
-        selloptions = {}
+        selloptions = collections.defaultdict(list)
         for tradeport in tradeports:
             sellprice = self._get_data_location_sellprice(tradeport, commodity, ship, amount)
-            if sellprice is None:
-                continue
-            if sellprice not in selloptions:
-                selloptions[sellprice] = []
-            selloptions[sellprice].append(tradeport)
+            if sellprice is not None:
+                selloptions[sellprice].append(tradeport)
 
         selloptions = dict(sorted(selloptions.items(), reverse=True))
         selloptions = dict(itertools.islice(selloptions.items(), maximal_number_of_locations))
 
-        messages = []
-        messages.append(f"Here are the best {len(selloptions)} locations to sell {amount} SCU {commodityName}:")
+        messages = [f"Here are the best {len(selloptions)} locations to sell {amount} SCU {commodityName}:"]
+
         for sellprice, tradeports in selloptions.items():
             messages.append(f"{sellprice} aUEC:")
-            for tradeport in tradeports:
-                messages.append(self._get_tradeport_route_description(tradeport))
+            messages.extend(self._get_tradeport_route_description(tradeport) for tradeport in tradeports)
 
         self._print_debug("\n".join(messages), True)
         return "\n".join(messages)
@@ -1712,19 +1624,6 @@ class UEXcorpWingman(OpenAiWingman):
         commodityAmount: int = 1,
         maximalNumberOfLocations: int = 3,
     ) -> str:
-        """
-        Finds the best buying locations for a given commodity and position.
-
-        Args:
-            commodityName (str, optional): The name of the commodity. Defaults to None.
-            shipName (str, optional): The name of the ship. Defaults to None.
-            positionName (str, optional): The name of the current position. Defaults to None.
-            commodityAmount (int, optional): The amount of the commodity. Defaults to 1.
-            maximalNumberOfLocations (int, optional): The maximal number of locations to be returned. Defaults to 3.
-
-        Returns:
-            str: A string containing information about the best buying location(s) and buy prices.
-        """
         self._print_debug("Called custom function _get_multiple_best_location_to_buy_from")
         self._print_debug(
             f"Given Parameters: Commodity: {commodityName}, Ship Name: {shipName}, Current Position: {positionName}, Amount: {commodityAmount}, Maximal Number of Locations: {maximalNumberOfLocations}"
@@ -1737,53 +1636,28 @@ class UEXcorpWingman(OpenAiWingman):
             self._print_debug("No commodity given. Ask for a commodity.", True)
             return "No commodity given. Ask for a commodity."
 
+        name_to_list = {
+            "commodityName": (commodityName, self.commodity_names),
+            "shipName": (shipName, self.ship_names),
+            "locationName": (positionName, self.tradeport_names + self.city_names + self.satellite_names + self.planet_names + self.system_names),
+        }
+
         misunderstood = []
-        if (
-            commodityName is not None
-            and self._find_closest_match(commodityName, self.commodity_names) is None
-        ):
-            misunderstood.append(f"Commodity: {commodityName}")
-        else:
-            commodityName = self._find_closest_match(
-                commodityName, self.commodity_names
-            )
-            self._set_function_arg_to_cache("commodityName", commodityName)
-        if (
-            shipName is not None
-            and self._find_closest_match(shipName, self.ship_names) is None
-        ):
-            misunderstood.append(f"Ship: {shipName}")
-        else:
-            shipName = self._find_closest_match(shipName, self.ship_names)
-            self._set_function_arg_to_cache("shipName", shipName)
-        if (
-            positionName is not None
-            and self._find_closest_match(
-                positionName,
-                self.tradeport_names
-                + self.city_names
-                + self.satellite_names
-                + self.planet_names
-                + self.system_names,
-            )
-            is None
-        ):
-            misunderstood.append(f"Current Position: {positionName}")
-        else:
-            positionName = self._find_closest_match(
-                positionName,
-                self.tradeport_names
-                + self.city_names
-                + self.satellite_names
-                + self.planet_names
-                + self.system_names,
-            )
-            self._set_function_arg_to_cache("locationName", positionName)
+        for name, (value, list_) in name_to_list.items():
+            if value is not None and self._find_closest_match(value, list_) is None:
+                misunderstood.append(f"{name}: {value}")
+            else:
+                name_to_list[name] = (self._find_closest_match(value, list_), list_)
+
+        for name, (value, _) in name_to_list.items():
+            if value is not None:
+                self._set_function_arg_to_cache(name, value)
+
         self._print_debug(
             f"Interpreted Parameters: Commodity: {commodityName}, Ship Name: {shipName}, Position: {positionName}, Amount: {commodityAmount}, Maximal Number of Locations: {maximalNumberOfLocations}"
         )
 
-        if len(misunderstood) > 0:
+        if misunderstood:
             self._print_debug(
                 "These given parameters do not exist in game. Exactly ask for clarification of these values: "
                 + ", ".join(misunderstood),
@@ -1793,40 +1667,25 @@ class UEXcorpWingman(OpenAiWingman):
                 misunderstood
             )
 
-        if positionName is None:
-            tradeports = self.tradeports
-        else:
-            tradeports = self._get_tradeports_by_positionname(positionName)
+        tradeports = self.tradeports if positionName is None else self._get_tradeports_by_positionname(positionName)
         commodity = self._get_commodity_by_name(commodityName)
         ship = self._get_ship_by_name(shipName)
-        if commodityAmount is None:
-            amount = 1
-        else:
-            amount = int(commodityAmount)
-        if amount < 1:
-            amount = 1
-        maximal_number_of_locations = int(maximalNumberOfLocations)
-        if maximal_number_of_locations < 1:
-            maximal_number_of_locations = 3
+        amount = max(1, int(commodityAmount or 1))
+        maximal_number_of_locations = max(1, int(maximalNumberOfLocations or 3))
 
-        buyoptions = {}
+        buyoptions = collections.defaultdict(list)
         for tradeport in tradeports:
             buyprice = self._get_data_location_buyprice(tradeport, commodity, ship, amount)
-            if buyprice is None:
-                continue
-            if buyprice not in buyoptions:
-                buyoptions[buyprice] = []
-            buyoptions[buyprice].append(tradeport)
+            if buyprice is not None:
+                buyoptions[buyprice].append(tradeport)
 
         buyoptions = dict(sorted(buyoptions.items(), reverse=False))
         buyoptions = dict(itertools.islice(buyoptions.items(), maximal_number_of_locations))
 
-        messages = []
-        messages.append(f"Here are the best {len(buyoptions)} locations to buy {amount} SCU {commodityName}:")
+        messages = [f"Here are the best {len(buyoptions)} locations to buy {amount} SCU {commodityName}:"]
         for buyprice, tradeports in buyoptions.items():
             messages.append(f"{buyprice} aUEC:")
-            for tradeport in tradeports:
-                messages.append(self._get_tradeport_route_description(tradeport))
+            messages.extend(self._get_tradeport_route_description(tradeport) for tradeport in tradeports)
 
         self._print_debug("\n".join(messages), True)
         return "\n".join(messages)
@@ -1835,8 +1694,9 @@ class UEXcorpWingman(OpenAiWingman):
         if ship is not None and ship["hull_trading"] is True and tradeport["hull_trading"] is False:
             return None
 
-        for commodity_code, price in tradeport["prices"].items():
-            if commodity_code == commodity["code"] and price["operation"] == "sell":
+        commodity_code = commodity["code"]
+        for code, price in tradeport["prices"].items():
+            if code == commodity_code and price["operation"] == "sell":
                 return price["price_sell"] * amount
         return None
 
@@ -1844,8 +1704,9 @@ class UEXcorpWingman(OpenAiWingman):
         if ship is not None and ship["hull_trading"] is True and tradeport["hull_trading"] is False:
             return None
 
-        for commodity_code, price in tradeport["prices"].items():
-            if commodity_code == commodity["code"] and price["operation"] == "buy":
+        commodity_code = commodity["code"]
+        for code, price in tradeport["prices"].items():
+            if code == commodity_code and price["operation"] == "buy":
                 return price["price_buy"] * amount
         return None
 
@@ -1934,12 +1795,8 @@ class UEXcorpWingman(OpenAiWingman):
         )
 
         shipName = self._get_function_arg_from_cache("shipName", shipName)
-        # positionStartName = self._get_function_arg_from_cache("locationName", positionStartName) # not working so well as this is will change frequently
-        illegalCommoditesAllowed = self._get_function_arg_from_cache("illegalCommoditesAllowed", illegalCommoditesAllowed)
-        if illegalCommoditesAllowed is None:
-            illegalCommoditesAllowed = True
-        else:
-            self._set_function_arg_to_cache("illegalCommoditesAllowed", illegalCommoditesAllowed)
+        illegalCommoditesAllowed = self._get_function_arg_from_cache("illegalCommoditesAllowed", illegalCommoditesAllowed) or True
+        self._set_function_arg_to_cache("illegalCommoditesAllowed", illegalCommoditesAllowed)
 
         if shipName is None:
             self._print_debug("No ship given. Ask for a ship. Dont say sorry.", True)
@@ -1952,76 +1809,23 @@ class UEXcorpWingman(OpenAiWingman):
             )
             return "No start position given. Ask for a start position. (Station, Planet, Satellite, City or System)"
 
-        if moneyToSpend is not None and int(moneyToSpend) < 1:
-            moneyToSpend = None
-        if freeCargoSpace is not None and int(freeCargoSpace) < 1:
-            freeCargoSpace = None
+        moneyToSpend = None if moneyToSpend is not None and int(moneyToSpend) < 1 else moneyToSpend
+        freeCargoSpace = None if freeCargoSpace is not None and int(freeCargoSpace) < 1 else freeCargoSpace
+
+        location_names_set = set(self.tradeport_names + self.city_names + self.satellite_names + self.planet_names + self.system_names)
 
         misunderstood = []
-        if (
-            shipName is not None
-            and self._find_closest_match(shipName, self.ship_names) is None
-        ):
-            misunderstood.append(f"Ship: {shipName}")
-        else:
-            shipName = self._find_closest_match(shipName, self.ship_names)
-            self._set_function_arg_to_cache("shipName", shipName)
-        if (
-            positionStartName is not None
-            and self._find_closest_match(
-                positionStartName,
-                self.tradeport_names
-                + self.city_names
-                + self.satellite_names
-                + self.planet_names
-                + self.system_names,
-            )
-            is None
-        ):
-            misunderstood.append(f"Position Start: {positionStartName}")
-        else:
-            positionStartName = self._find_closest_match(
-                positionStartName,
-                self.tradeport_names
-                + self.city_names
-                + self.satellite_names
-                + self.planet_names
-                + self.system_names,
-            )
-            self._set_function_arg_to_cache("locationName", positionStartName)
-        if (
-            positionEndName is not None
-            and self._find_closest_match(
-                positionEndName,
-                self.tradeport_names
-                + self.city_names
-                + self.satellite_names
-                + self.planet_names
-                + self.system_names,
-            )
-            is None
-        ):
-            misunderstood.append(f"Position End: {positionEndName}")
-        else:
-            positionEndName = self._find_closest_match(
-                positionEndName,
-                self.tradeport_names
-                + self.city_names
-                + self.satellite_names
-                + self.planet_names
-                + self.system_names,
-            )
-            self._set_function_arg_to_cache("locationNameTarget", positionEndName)
-        if (
-            commodityName is not None
-            and self._find_closest_match(commodityName, self.commodity_names) is None
-        ):
-            misunderstood.append(f"Commodity: {commodityName}")
-        else:
-            commodityName = self._find_closest_match(
-                commodityName, self.commodity_names
-            )
-            self._set_function_arg_to_cache("commodityName", commodityName)
+        for param, value, names_set, cache_key in [
+            ("Ship", shipName, self.ship_names, "shipName"),
+            ("Position Start", positionStartName, location_names_set, "locationName"),
+            ("Position End", positionEndName, location_names_set, "locationNameTarget"),
+            ("Commodity", commodityName, self.commodity_names, "commodityName"),
+        ]:
+            match = self._find_closest_match(value, names_set)
+            if match is None:
+                misunderstood.append(f"{param}: {value}")
+            else:
+                self._set_function_arg_to_cache(cache_key, match)
 
         self._print_debug(
             f"Interpreted Parameters: Ship: {shipName}, Position Start: {positionStartName}, Position End: {positionEndName}, Commodity Name: {commodityName}, Money: {moneyToSpend} aUEC, FreeCargoSpace: {freeCargoSpace} SCU, Maximal Number of Routes: {maximalNumberOfRoutes}, Illegal Allowed: {illegalCommoditesAllowed}"
@@ -2029,20 +1833,18 @@ class UEXcorpWingman(OpenAiWingman):
 
         self._set_function_arg_to_cache("money", moneyToSpend)
 
-        if len(misunderstood) > 0:
+        if misunderstood:
+            misunderstood_str = ", ".join(misunderstood)
             self._print_debug(
-                "These given parameters do not exist in game. Exactly ask for clarification of these values: "
-                + ", ".join(misunderstood),
+                f"These given parameters do not exist in game. Exactly ask for clarification of these values: {misunderstood_str}",
                 True
             )
-            return "These given parameters do not exist in game. Exactly ask for clarification of these values: " + ", ".join(
-                misunderstood
-            )
+            return f"These given parameters do not exist in game. Exactly ask for clarification of these values: {misunderstood_str}"
 
         trading_routes = []
+        self.cache_enabled = False
         if commodityName is None:
             for commodity in self.commodity_names:
-                self.cache_enabled = False
                 trading_route_new = self._get_best_trading_route(
                     shipName,
                     moneyToSpend,
@@ -2052,81 +1854,53 @@ class UEXcorpWingman(OpenAiWingman):
                     commodity,
                     illegalCommoditesAllowed,
                 )
-                self.cache_enabled = True
                 self._print_debug(trading_route_new, True)
                 if trading_route_new.startswith("{"):
                     trading_route_new = json.loads(trading_route_new)
                     trading_routes.append(trading_route_new)
         else:
             commodity = self._get_commodity_by_name(commodityName)
-            if positionStartName is not None:
-                start_tradeports = self._get_tradeports_by_positionname(
-                    positionStartName
-                )
-            else:
-                start_tradeports = self.tradeports
-            if positionEndName is not None:
-                end_tradeports = self._get_tradeports_by_positionname(positionEndName)
-            else:
-                end_tradeports = self.tradeports
+            start_tradeports = self._get_tradeports_by_positionname(positionStartName) if positionStartName else self.tradeports
+            end_tradeports = self._get_tradeports_by_positionname(positionEndName) if positionEndName else self.tradeports
+
+            start_tradeports = [tp for tp in start_tradeports if commodity["code"] in tp["prices"] and tp["prices"][commodity["code"]]["operation"] == "buy"]
+            end_tradeports = [tp for tp in end_tradeports if commodity["code"] in tp["prices"] and tp["prices"][commodity["code"]]["operation"] == "sell"]
 
             for start_tradeport in start_tradeports:
-                if (
-                    commodity["code"] in start_tradeport["prices"]
-                    and start_tradeport["prices"][commodity["code"]]["operation"]
-                    == "buy"
-                ):
-                    for end_tradeport in end_tradeports:
-                        if (
-                            commodity["code"] in end_tradeport["prices"]
-                            and end_tradeport["prices"][commodity["code"]]["operation"]
-                            == "sell"
-                        ):
-                            self.cache_enabled = False
-                            trading_route_new = self._get_best_trading_route(
-                                shipName,
-                                moneyToSpend,
-                                self._format_tradeport_name(start_tradeport),
-                                freeCargoSpace,
-                                self._format_tradeport_name(end_tradeport),
-                                commodityName,
-                                illegalCommoditesAllowed,
-                            )
-                            self.cache_enabled = True
-                            self._print_debug(trading_route_new, True)
-                            if trading_route_new.startswith("{"):
-                                trading_route_new = json.loads(trading_route_new)
-                                trading_routes.append(trading_route_new)
+                for end_tradeport in end_tradeports:
+                    trading_route_new = self._get_best_trading_route(
+                        shipName,
+                        moneyToSpend,
+                        self._format_tradeport_name(start_tradeport),
+                        freeCargoSpace,
+                        self._format_tradeport_name(end_tradeport),
+                        commodityName,
+                        illegalCommoditesAllowed,
+                    )
+                    self._print_debug(trading_route_new, True)
+                    if trading_route_new.startswith("{"):
+                        trading_route_new = json.loads(trading_route_new)
+                        trading_routes.append(trading_route_new)
+        self.cache_enabled = True
 
-        # sort the trading routes by proft descending
-        trading_routes = sorted(
-            trading_routes, key=lambda k: int(k["profit"].split(" ")[0]), reverse=True
-        )
+        # get the top maximalNumberOfRoutes trading routes by profit
+        trading_routes = heapq.nlargest(maximalNumberOfRoutes, trading_routes, key=lambda k: int(k["profit"].split(" ")[0]))
 
-        # remove all but the first maximalNumberOfRoutes routes
-        if len(trading_routes) > maximalNumberOfRoutes:
-            trading_routes = trading_routes[:maximalNumberOfRoutes]
-
-        if len(trading_routes) > 0:
-            additional_answer = ""
+        if trading_routes:
             if len(trading_routes) == maximalNumberOfRoutes:
                 additional_answer = " Tell the player their might be more routes with lower profit, but they are not shown to keep it short. "
-            if len(trading_routes) < maximalNumberOfRoutes:
+            else:
                 additional_answer = f" Tell the player there are only {len(trading_routes)} with different commodities available. "
 
-            self._print_debug(
-                "List possible commodites with just their profit and only give further information on request (e.g. 86 SCU Astantine for a profit of 45.567 aUEC)."
-                + additional_answer
-                + "JSON: "
-                + json.dumps(trading_routes),
-                True
-            )
-            return (
-                "List possible commodites with just their profit and only give further information on request (e.g. 86 SCU Astantine for a profit of 45.567 aUEC)."
+            message = (
+                "List possible commodities with just their profit and only give further information on request (e.g. 86 SCU Astatine for a profit of 45.567 aUEC)."
                 + additional_answer
                 + "JSON: "
                 + json.dumps(trading_routes)
             )
+
+            self._print_debug(message, True)
+            return message
         else:
             self._print_debug("No trading routes found.", True)
             return "No trading routes found."
@@ -2182,71 +1956,22 @@ class UEXcorpWingman(OpenAiWingman):
         if freeCargoSpace is not None and int(freeCargoSpace) < 1:
             freeCargoSpace = None
 
+        location_names_set = set(self.tradeport_names + self.city_names + self.satellite_names + self.planet_names + self.system_names)
         misunderstood = []
-        if (
-            shipName is not None
-            and self._find_closest_match(shipName, self.ship_names) is None
-        ):
-            misunderstood.append(f"Ship: {shipName}")
-        else:
-            shipName = self._find_closest_match(shipName, self.ship_names)
-            self._set_function_arg_to_cache("shipName", shipName)
-        if (
-            positionStartName is not None
-            and self._find_closest_match(
-                positionStartName,
-                self.tradeport_names
-                + self.city_names
-                + self.satellite_names
-                + self.planet_names
-                + self.system_names,
-            )
-            is None
-        ):
-            misunderstood.append(f"Position Start: {positionStartName}")
-        else:
-            positionStartName = self._find_closest_match(
-                positionStartName,
-                self.tradeport_names
-                + self.city_names
-                + self.satellite_names
-                + self.planet_names
-                + self.system_names,
-            )
-            self._set_function_arg_to_cache("locationName", positionStartName)
-        if (
-            positionEndName is not None
-            and self._find_closest_match(
-                positionEndName,
-                self.tradeport_names
-                + self.city_names
-                + self.satellite_names
-                + self.planet_names
-                + self.system_names,
-            )
-            is None
-        ):
-            misunderstood.append(f"Position End: {positionEndName}")
-        else:
-            positionEndName = self._find_closest_match(
-                positionEndName,
-                self.tradeport_names
-                + self.city_names
-                + self.satellite_names
-                + self.planet_names
-                + self.system_names,
-            )
-            self._set_function_arg_to_cache("locationNameTarget", positionEndName)
-        if (
-            commodityName is not None
-            and self._find_closest_match(commodityName, self.commodity_names) is None
-        ):
-            misunderstood.append(f"Commodity: {commodityName}")
-        else:
-            commodityName = self._find_closest_match(
-                commodityName, self.commodity_names
-            )
-            self._set_function_arg_to_cache("commodityName", commodityName)
+        parameters = {
+            "shipName": (shipName, self.ship_names),
+            "locationName": (positionStartName, location_names_set),
+            "locationNameTarget": (positionEndName, location_names_set),
+            "commodityName": (commodityName, self.commodity_names),
+        }
+
+        for param, (value, names_set) in parameters.items():
+            if value is not None:
+                match = self._find_closest_match(value, names_set)
+                if match is None:
+                    misunderstood.append(f"{param}: {value}")
+                else:
+                    self._set_function_arg_to_cache(param, match)
 
         self._set_function_arg_to_cache("money", moneyToSpend)
 
@@ -2254,15 +1979,10 @@ class UEXcorpWingman(OpenAiWingman):
             f"Interpreted Parameters: Ship: {shipName}, Position Start: {positionStartName}, Position End: {positionEndName},  Money: {moneyToSpend} aUEC, FreeCargoSpace: {freeCargoSpace} SCU, Commodity: {commodityName}, Illegal Allowed: {illegalCommoditesAllowed}"
         )
 
-        if len(misunderstood) > 0:
-            self._print_debug(
-                "These given parameters do not exist in game. Exactly ask for clarification of these values: "
-                + ", ".join(misunderstood),
-                True
-            )
-            return "These given parameters do not exist in game. Exactly ask for clarification of these values: " + ", ".join(
-                misunderstood
-            )
+        if misunderstood:
+            message = "These given parameters do not exist in game. Exactly ask for clarification of these values: " + ", ".join(misunderstood)
+            self._print_debug(message, True)
+            return message
 
         ship = self._get_ship_by_name(shipName)
         cargo_space = ship["scu"]
@@ -2428,16 +2148,7 @@ class UEXcorpWingman(OpenAiWingman):
         Returns:
             Optional[object]: The ship object if found, or None if not found.
         """
-        if not name:
-            return None
-        return next(
-            (
-                ship
-                for ship in self.ships
-                if self._format_ship_name(ship).lower() == name.lower()
-            ),
-            None,
-        )
+        return self.ship_dict.get(name.lower()) if name else None
 
     def _get_tradeport_by_name(self, name: str) -> Optional[object]:
         """Finds the tradeport with the specified name and returns the tradeport or None.
@@ -2448,16 +2159,7 @@ class UEXcorpWingman(OpenAiWingman):
         Returns:
             Optional[object]: The tradeport object if found, otherwise None.
         """
-        if not name:
-            return None
-        return next(
-            (
-                tradeport
-                for tradeport in self.tradeports
-                if self._format_tradeport_name(tradeport).lower() == name.lower()
-            ),
-            None,
-        )
+        return self.tradeport_dict.get(name.lower()) if name else None
 
     def _get_tradeport_by_code(self, code: str) -> Optional[object]:
         """Finds the tradeport with the specified code and returns the tradeport or None.
@@ -2468,16 +2170,7 @@ class UEXcorpWingman(OpenAiWingman):
         Returns:
             Optional[object]: The tradeport object if found, otherwise None.
         """
-        if not code:
-            return None
-        return next(
-            (
-                tradeport
-                for tradeport in self.tradeports
-                if tradeport["code"].lower() == code.lower()
-            ),
-            None,
-        )
+        return self.tradeport_code_dict.get(code.lower()) if code else None
 
     def _get_planet_by_name(self, name: str) -> Optional[object]:
         """Finds the planet with the specified name and returns the planet or None.
@@ -2488,16 +2181,7 @@ class UEXcorpWingman(OpenAiWingman):
         Returns:
             Optional[object]: The planet object if found, otherwise None.
         """
-        if not name:
-            return None
-        return next(
-            (
-                planet
-                for planet in self.planets
-                if self._format_planet_name(planet).lower() == name.lower()
-            ),
-            None,
-        )
+        return self.planet_dict.get(name.lower()) if name else None
 
     def _get_city_by_name(self, name: str) -> Optional[object]:
         """Finds the city with the specified name and returns the city or None.
@@ -2508,16 +2192,7 @@ class UEXcorpWingman(OpenAiWingman):
         Returns:
             Optional[object]: The city object if found, or None if not found.
         """
-        if not name:
-            return None
-        return next(
-            (
-                city
-                for city in self.cities
-                if self._format_city_name(city).lower() == name.lower()
-            ),
-            None,
-        )
+        return self.city_dict.get(name.lower()) if name else None
 
     def _get_satellite_by_name(self, name: str) -> Optional[object]:
         """Finds the satellite with the specified name and returns the satellite or None.
@@ -2528,16 +2203,7 @@ class UEXcorpWingman(OpenAiWingman):
         Returns:
             Optional[object]: The satellite object if found, otherwise None.
         """
-        if not name:
-            return None
-        return next(
-            (
-                satellite
-                for satellite in self.satellites
-                if self._format_satellite_name(satellite).lower() == name.lower()
-            ),
-            None,
-        )
+        return self.satellite_dict.get(name.lower()) if name else None
 
     def _get_system_by_name(self, name: str) -> Optional[object]:
         """Finds the system with the specified name and returns the system or None.
@@ -2548,16 +2214,7 @@ class UEXcorpWingman(OpenAiWingman):
         Returns:
             Optional[object]: The system object if found, otherwise None.
         """
-        if not name:
-            return None
-        return next(
-            (
-                system
-                for system in self.systems
-                if self._format_system_name(system).lower() == name.lower()
-            ),
-            None,
-        )
+        return self.system_dict.get(name.lower()) if name else None
 
     def _get_commodity_by_name(self, name: str) -> Optional[object]:
         """Finds the commodity with the specified name and returns the commodity or None.
@@ -2568,16 +2225,7 @@ class UEXcorpWingman(OpenAiWingman):
         Returns:
             Optional[object]: The commodity object if found, otherwise None.
         """
-        if not name:
-            return None
-        return next(
-            (
-                commodity
-                for commodity in self.commodities
-                if self._format_commodity_name(commodity).lower() == name.lower()
-            ),
-            None,
-        )
+        return self.commodity_dict.get(name.lower()) if name else None
 
     def _get_tradeport_route_description(self, tradeport: dict[str, any]) -> str:
         """Returns the breadcrums of a tradeport.
@@ -2588,24 +2236,9 @@ class UEXcorpWingman(OpenAiWingman):
         Returns:
             str: The description of the tradeport route.
         """
-        route = []
         tradeport = self._get_converted_tradeport_for_output(tradeport)
-        if "system" in tradeport:
-            route.append(
-                f"Star-System: {tradeport['system']}"
-            )
-        if "planet" in tradeport:
-            route.append(
-                f"Planet: {tradeport['planet']}"
-            )
-        if "satellite" in tradeport:
-            route.append(
-                f"Satellite: {tradeport['satellite']}"
-            )
-        if "city" in tradeport:
-            route.append(f"City: {tradeport['city']}")
-        if "name" in tradeport:
-            route.append(f"Trade Point: {tradeport['name']}")
+        keys = [("system", "Star-System"), ("planet", "Planet"), ("satellite", "Satellite"), ("city", "City"), ("name", "Trade Point")]
+        route = [f"{name}: {tradeport[key]}" for key, name in keys if key in tradeport]
         return f"({' >> '.join(route)})"
 
     def _get_system_name_by_code(self, code: str) -> str:
@@ -2617,16 +2250,7 @@ class UEXcorpWingman(OpenAiWingman):
         Returns:
             str: The name of the system with the specified code.
         """
-        if not code:
-            return ""
-        return next(
-            (
-                system["name"]
-                for system in self.systems
-                if system["code"].lower() == code.lower()
-            ),
-            "",
-        )
+        return self.system_code_dict.get(code.lower()) if code else None
 
     def _get_planet_name_by_code(self, code: str) -> str:
         """Returns the name of the planet with the specified code.
@@ -2637,16 +2261,7 @@ class UEXcorpWingman(OpenAiWingman):
         Returns:
             str: The name of the planet with the specified code.
         """
-        if not code:
-            return ""
-        return next(
-            (
-                planet["name"]
-                for planet in self.planets
-                if planet["code"].lower() == code.lower()
-            ),
-            "",
-        )
+        return self.planet_code_dict.get(code.lower()) if code else None
 
     def _get_satellite_name_by_code(self, code: str) -> str:
         """Returns the name of the satellite with the specified code.
@@ -2657,16 +2272,7 @@ class UEXcorpWingman(OpenAiWingman):
         Returns:
             str: The name of the satellite with the specified code.
         """
-        if not code:
-            return ""
-        return next(
-            (
-                satellite["name"]
-                for satellite in self.satellites
-                if satellite["code"].lower() == code.lower()
-            ),
-            "",
-        )
+        return self.satellite_code_dict.get(code.lower()) if code else None
 
     def _get_city_name_by_code(self, code: str) -> str:
         """Returns the name of the city with the specified code.
@@ -2677,16 +2283,7 @@ class UEXcorpWingman(OpenAiWingman):
         Returns:
             str: The name of the city with the specified code.
         """
-        if not code:
-            return ""
-        return next(
-            (
-                city["name"]
-                for city in self.cities
-                if city["code"].lower() == code.lower()
-            ),
-            "",
-        )
+        return self.city_code_dict.get(code.lower()) if code else None
 
     def _get_commodity_name_by_code(self, code: str) -> str:
         """Returns the name of the commodity with the specified code.
@@ -2697,16 +2294,7 @@ class UEXcorpWingman(OpenAiWingman):
         Returns:
             str: The name of the commodity with the specified code.
         """
-        if not code:
-            return ""
-        return next(
-            (
-                commodity["name"]
-                for commodity in self.commodities
-                if commodity["code"].lower() == code.lower()
-            ),
-            "",
-        )
+        return self.commodity_code_dict.get(code.lower()) if code else None
 
     def _get_tradeports_by_positionname(self, name: str, direct: bool = False) -> list[dict[str, any]]:
         """Returns all tradeports with the specified position name.
@@ -2719,36 +2307,17 @@ class UEXcorpWingman(OpenAiWingman):
         """
         if not name:
             return []
-        tradeport = self._get_tradeport_by_name(name)
-        city = self._get_city_by_name(name)
-        satellite = self._get_satellite_by_name(name)
-        planet = self._get_planet_by_name(name)
-        system = self._get_system_by_name(name)
-
+        
         tradeports = []
-        if system is not None:
-            for tradeport in self.tradeports:
-                if tradeport["system"] == system["code"] and (direct is False or not tradeport["planet"]):
-                    tradeports.append(tradeport)
-        else:
-            if planet is not None:
-                for tradeport in self.tradeports:
-                    if tradeport["planet"] == planet["code"] and (direct is False or not tradeport["satellite"]):
-                        tradeports.append(tradeport)
-            else:
-                if satellite is not None:
-                    for tradeport in self.tradeports:
-                        if tradeport["satellite"] == satellite["code"]:
-                            tradeports.append(tradeport)
-                else:
-                    if city is not None:
-                        for tradeport in self.tradeports:
-                            if tradeport["city"] == city["code"]:
-                                tradeports.append(tradeport)
-                    else:
-                        if tradeport is not None:
-                            tradeports.append(tradeport)
 
+        tradeport_temp = self._get_tradeport_by_name(name)
+        if tradeport_temp:
+            tradeports.append(tradeport_temp)
+
+        tradeports.extend(self._get_tradeports_by_systemname(name))
+        tradeports.extend(self._get_tradeports_by_planetname(name))
+        tradeports.extend(self._get_tradeports_by_satellitename(name))
+        tradeports.extend(self._get_tradeports_by_cityname(name))
         return tradeports
 
     def _get_satellites_by_planetcode(self, code: str) -> list[dict[str, any]]:
@@ -2760,13 +2329,7 @@ class UEXcorpWingman(OpenAiWingman):
         Returns:
             Optional[object]: The satellite object if found, otherwise None.
         """
-        if not code:
-            return []
-        return [
-            satellite
-            for satellite in self.satellites
-            if satellite["planet"].lower() == code.lower()
-        ]
+        return self.satellites_by_planet.get(code.lower(), []) if code else []
 
     def _get_cities_by_planetcode(self, code: str) -> list[dict[str, any]]:
         """Returns all cities with the specified planet code.
@@ -2777,13 +2340,7 @@ class UEXcorpWingman(OpenAiWingman):
         Returns:
             list[dict[str, any]]: A list of cities matching the planet code.
         """
-        if not code:
-            return []
-        return [
-            city
-            for city in self.cities
-            if city["planet"].lower() == code.lower()
-        ]
+        return self.cities_by_planet.get(code.lower(), []) if code else []
 
     def _get_planets_by_systemcode(self, code: str) -> list[dict[str, any]]:
         """Returns all planets with the specified system code.
@@ -2794,10 +2351,119 @@ class UEXcorpWingman(OpenAiWingman):
         Returns:
             list[dict[str, any]]: A list of planets matching the system code.
         """
-        if not code:
-            return []
-        return [
-            planet
-            for planet in self.planets
-            if planet["system"].lower() == code.lower()
-        ]
+        return self.planets_by_system.get(code.lower(), []) if code else []
+    
+    def _get_tradeports_by_systemcode(self, code: str) -> list[dict[str, any]]:
+        """Returns all tradeports with the specified system code.
+
+        Args:
+            code (str): The code of the system.
+
+        Returns:
+            list[dict[str, any]]: A list of tradeports matching the system code.
+        """
+        return self.tradeports_by_system.get(code.lower(), []) if code else []
+    
+    def _get_tradeports_by_planetcode(self, code: str) -> list[dict[str, any]]:
+        """Returns all tradeports with the specified planet code.
+
+        Args:
+            code (str): The code of the planet.
+
+        Returns:
+            list[dict[str, any]]: A list of tradeports matching the planet code.
+        """
+        return self.tradeports_by_planet.get(code.lower(), []) if code else []
+    
+    def _get_tradeports_by_satellitecode(self, code: str) -> list[dict[str, any]]:
+        """Returns all tradeports with the specified satellite code.
+
+        Args:
+            code (str): The code of the satellite.
+
+        Returns:
+            list[dict[str, any]]: A list of tradeports matching the satellite code.
+        """
+        return self.tradeports_by_satellite.get(code.lower(), []) if code else []
+    
+    def _get_tradeports_by_citycode(self, code: str) -> list[dict[str, any]]:
+        """Returns all tradeports with the specified city code.
+
+        Args:
+            code (str): The code of the city.
+
+        Returns:
+            list[dict[str, any]]: A list of tradeports matching the city code.
+        """
+        return self.tradeports_by_city.get(code.lower(), []) if code else []
+    
+    def _get_tradeports_by_systemname(self, name: str) -> list[dict[str, any]]:
+        """Returns all tradeports with the specified system name.
+
+        Args:
+            name (str): The name of the system.
+
+        Returns:
+            list[dict[str, any]]: A list of tradeports matching the system name.
+        """
+        return self.tradeports_by_system_name.get(name.lower(), []) if name else []
+    
+    def _get_tradeports_by_planetname(self, name: str) -> list[dict[str, any]]:
+        """Returns all tradeports with the specified planet name.
+
+        Args:
+            name (str): The name of the planet.
+
+        Returns:
+            list[dict[str, any]]: A list of tradeports matching the planet name.
+        """
+        planet = self._get_planet_by_name(name)
+        return self._get_tradeports_by_planetcode(planet["code"]) if planet else []
+    
+    def _get_tradeports_by_satellitename(self, name: str) -> list[dict[str, any]]:
+        """Returns all tradeports with the specified satellite name.
+
+        Args:
+            name (str): The name of the satellite.
+
+        Returns:
+            list[dict[str, any]]: A list of tradeports matching the satellite name.
+        """
+        satellite = self._get_satellite_by_name(name)
+        return self._get_tradeports_by_satellitecode(satellite["code"]) if satellite else []
+    
+    def _get_tradeports_by_cityname(self, name: str) -> list[dict[str, any]]:
+        """Returns all tradeports with the specified city name.
+
+        Args:
+            name (str): The name of the city.
+
+        Returns:
+            list[dict[str, any]]: A list of tradeports matching the city name.
+        """
+        city = self._get_city_by_name(name)
+        return self._get_tradeports_by_citycode(city["code"]) if city else []
+    
+    def _get_tradeports_by_cityname(self, name: str) -> list[dict[str, any]]:
+        """Returns all tradeports with the specified city name.
+
+        Args:
+            name (str): The name of the city.
+
+        Returns:
+            list[dict[str, any]]: A list of tradeports matching the city name.
+        """
+        city = self._get_city_by_name(name)
+        return self._get_tradeports_by_citycode(city["code"]) if city else []
+    
+    def _get_tradeports_by_systemname(self, name: str) -> list[dict[str, any]]:
+        """Returns all tradeports with the specified system name.
+
+        Args:
+            name (str): The name of the system.
+
+        Returns:
+            list[dict[str, any]]: A list of tradeports matching the system name.
+        """
+        system = self._get_system_by_name(name)
+        return self._get_tradeports_by_systemcode(system["code"]) if system else []
