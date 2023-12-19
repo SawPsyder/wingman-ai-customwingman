@@ -450,10 +450,14 @@ class UEXcorpWingman(OpenAiWingman):
         self.tradeport_dict = {self._format_tradeport_name(tradeport).lower(): tradeport for tradeport in self.tradeports}
         self.tradeport_code_dict = {tradeport["code"].lower(): tradeport for tradeport in self.tradeports}
         for tradeport in self.tradeports:
-            self.tradeports_by_system[tradeport["system"].lower()].append(tradeport)
-            self.tradeports_by_planet[tradeport["planet"].lower()].append(tradeport)
-            self.tradeports_by_satellite[tradeport["satellite"].lower()].append(tradeport)
-            self.tradeports_by_city[tradeport["city"].lower()].append(tradeport)
+            if tradeport["system"]:
+                self.tradeports_by_system[tradeport["system"].lower()].append(tradeport)
+            if tradeport["planet"]:
+                self.tradeports_by_planet[tradeport["planet"].lower()].append(tradeport)
+            if tradeport["satellite"]:
+                self.tradeports_by_satellite[tradeport["satellite"].lower()].append(tradeport)
+            if tradeport["city"]:
+                self.tradeports_by_city[tradeport["city"].lower()].append(tradeport)
 
         self.city_names = [
             self._format_city_name(city) for city in self.cities
