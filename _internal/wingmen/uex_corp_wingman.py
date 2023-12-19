@@ -1177,22 +1177,22 @@ class UEXcorpWingman(OpenAiWingman):
             return json.dumps(output_tradeport)
         city = self._get_city_by_name(locationName)
         if city is not None:
-            output_city = self._get_converted_city_for_ouput(city)
+            output_city = self._get_converted_city_for_output(city)
             self._print_debug(output_city, True)
             return json.dumps(output_city)
         satellite = self._get_satellite_by_name(locationName)
         if satellite is not None:
-            output_satellite = self._get_converted_satellite_for_ouput(satellite)
+            output_satellite = self._get_converted_satellite_for_output(satellite)
             self._print_debug(output_satellite, True)
             return json.dumps(output_satellite)
         planet = self._get_planet_by_name(locationName)
         if planet is not None:
-            output_planet = self._get_converted_planet_for_ouput(planet)
+            output_planet = self._get_converted_planet_for_output(planet)
             self._print_debug(output_planet, True)
             return json.dumps(output_planet)
         system = self._get_system_by_name(locationName)
         if system is not None:
-            output_system = self._get_converted_system_for_ouput(system)
+            output_system = self._get_converted_system_for_output(system)
             self._print_debug(output_system, True)
             return json.dumps(output_system)
 
@@ -2400,17 +2400,6 @@ class UEXcorpWingman(OpenAiWingman):
             list[dict[str, any]]: A list of tradeports matching the city code.
         """
         return self.tradeports_by_city.get(code.lower(), []) if code else []
-    
-    def _get_tradeports_by_systemname(self, name: str) -> list[dict[str, any]]:
-        """Returns all tradeports with the specified system name.
-
-        Args:
-            name (str): The name of the system.
-
-        Returns:
-            list[dict[str, any]]: A list of tradeports matching the system name.
-        """
-        return self.tradeports_by_system_name.get(name.lower(), []) if name else []
     
     def _get_tradeports_by_planetname(self, name: str) -> list[dict[str, any]]:
         """Returns all tradeports with the specified planet name.
