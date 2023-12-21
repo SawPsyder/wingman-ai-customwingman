@@ -124,6 +124,8 @@ class UEXcorpWingman(OpenAiWingman):
         self.city_code_dict = {}
         self.cities_by_planet = collections.defaultdict(list)
 
+        self.location_names_set = set()
+
         self.cache_enabled = True
         self.cache = {
             "function_args": {},
@@ -483,6 +485,14 @@ class UEXcorpWingman(OpenAiWingman):
         for planet in self.planets:
             self.planets_by_system[planet["system"].lower()].append(planet)
 
+        self.location_names_set = set(
+            self.system_names
+            + self.tradeport_names
+            + self.city_names
+            + self.satellite_names
+            + self.planet_names
+        )
+
         if self.uexcorp_additional_context:
             self._add_context(
                 'Possible values for function parameter "shipName". If none is explicitly given by player, use "None": '
@@ -492,13 +502,7 @@ class UEXcorpWingman(OpenAiWingman):
                 + ", ".join(self.commodity_names)
                 + "\n\n"
                 + 'Possible values for function parameters "positionStartName", "positionEndName", "currentPositionName" and "locationName": '
-                + ", ".join(
-                    self.system_names
-                    + self.tradeport_names
-                    + self.city_names
-                    + self.satellite_names
-                    + self.planet_names
-                )
+                + ", ".join(self.location_names_set)
             )
 
         self._add_context(
@@ -531,7 +535,7 @@ class UEXcorpWingman(OpenAiWingman):
         """
         return int(datetime.now().timestamp())
 
-    def _find_closest_match(self, search, lst):
+    def _find_closest_match(self, search: str|None, lst: list[str]|set[str]) -> str|None:
         """
         Finds the closest match to a given string in a list.
         Or returns an exact match if found.
@@ -549,21 +553,19 @@ class UEXcorpWingman(OpenAiWingman):
 
         self._print_debug(f"Searching for closest match to '{search}' in list.", True)
 
-        # create checksum of provided list and search term
-        checksum = f"{len(lst)}--{lst[0]}--{search}".replace(" ", "")
+        checksum = f"{hash(frozenset(lst))}-{hash(search)}"
         if checksum in self.cache["search_matches"]:
-            self._print_debug(f"Found closest match to '{search}' in cache.", True)
-            return self.cache["search_matches"][checksum]
+            match = self.cache["search_matches"][checksum]
+            self._print_debug(f"Found closest match to '{search}' in cache: '{match}'", True)
+            return match
 
         if search in lst:
             self._print_debug(f"Found exact match to '{search}' in list.", True)
             return search
 
         # make a list of possible matches
-        closest_matches = difflib.get_close_matches(search, lst, n=10, cutoff=0.2)
-        if len(search) < 3:
-            # find all matches, that contain the search term
-            closest_matches.extend(item for item in lst if search.lower() in item.lower())
+        closest_matches = difflib.get_close_matches(search, lst, n=15, cutoff=0.2)
+        closest_matches.extend(item for item in lst if search.lower() in item.lower())
         self._print_debug(f"Making a list for closest matches for search term '{search}': {', '.join(closest_matches)}", True)
 
         if not closest_matches:
@@ -601,6 +603,7 @@ class UEXcorpWingman(OpenAiWingman):
             return None
 
         self._print_debug(f"Found closest match to '{search}' in list: '{answer}'", True)
+        self._add_context(f"\n\nInstead of '{search}', you should use '{answer}'.")
         self.cache["search_matches"][checksum] = answer
         return answer
 
@@ -1152,8 +1155,7 @@ class UEXcorpWingman(OpenAiWingman):
             return "No location given. Ask for a location."
 
         misunderstood = []
-        all_names = self.tradeport_names + self.city_names + self.satellite_names + self.planet_names + self.system_names
-        closest_match = self._find_closest_match(locationName, all_names)
+        closest_match = self._find_closest_match(locationName, self.location_names_set)
         if closest_match is None:
             misunderstood.append(f"Location: {locationName}")
         else:
@@ -1172,29 +1174,29 @@ class UEXcorpWingman(OpenAiWingman):
         # get a clone of the data
         tradeport = self._get_tradeport_by_name(locationName)
         if tradeport is not None:
-            output_tradeport = self._get_converted_tradeport_for_output(tradeport)
-            self._print_debug(output_tradeport, True)
-            return json.dumps(output_tradeport)
+            output = self._get_converted_tradeport_for_output(tradeport)
+            self._print_debug(output, True)
+            return json.dumps(output)
         city = self._get_city_by_name(locationName)
         if city is not None:
-            output_city = self._get_converted_city_for_output(city)
-            self._print_debug(output_city, True)
-            return json.dumps(output_city)
+            output = self._get_converted_city_for_output(city)
+            self._print_debug(output, True)
+            return json.dumps(output)
         satellite = self._get_satellite_by_name(locationName)
         if satellite is not None:
-            output_satellite = self._get_converted_satellite_for_output(satellite)
-            self._print_debug(output_satellite, True)
-            return json.dumps(output_satellite)
+            output = self._get_converted_satellite_for_output(satellite)
+            self._print_debug(output, True)
+            return json.dumps(output)
         planet = self._get_planet_by_name(locationName)
         if planet is not None:
-            output_planet = self._get_converted_planet_for_output(planet)
-            self._print_debug(output_planet, True)
-            return json.dumps(output_planet)
+            output = self._get_converted_planet_for_output(planet)
+            self._print_debug(output, True)
+            return json.dumps(output)
         system = self._get_system_by_name(locationName)
         if system is not None:
-            output_system = self._get_converted_system_for_output(system)
-            self._print_debug(output_system, True)
-            return json.dumps(output_system)
+            output = self._get_converted_system_for_output(system)
+            self._print_debug(output, True)
+            return json.dumps(output)
 
     def _get_converted_tradeport_for_output(self, tradeport: dict[str, any]) -> dict[str, any]:
         """
@@ -1565,22 +1567,27 @@ class UEXcorpWingman(OpenAiWingman):
         commodityName = self._get_function_arg_from_cache("commodityName", commodityName)
         shipName = self._get_function_arg_from_cache("shipName", shipName)
 
-        name_to_list = {
-            "commodityName": (commodityName, self.commodity_names),
-            "shipName": (shipName, self.ship_names),
-            "positionName": (positionName, self.tradeport_names + self.city_names + self.satellite_names + self.planet_names + self.system_names),
-        }
+        if commodityName is None:
+            self._print_debug("No commodity given. Ask for a commodity.", True)
+            return "No commodity given. Ask for a commodity."
 
         misunderstood = []
-        for name, (value, list_) in name_to_list.items():
-            if value is not None and self._find_closest_match(value, list_) is None:
-                misunderstood.append(f"{name}: {value}")
-            else:
-                name_to_list[name] = (self._find_closest_match(value, list_), list_)
-
-        for name, (value, _) in name_to_list.items():
+        parameters = {
+            "commodityName": (commodityName, self.commodity_names),
+            "shipName": (shipName, self.ship_names),
+            "positionName": (positionName, self.location_names_set),
+        }
+        for param, (value, names_set) in parameters.items():
             if value is not None:
-                self._set_function_arg_to_cache(name, value)
+                match = self._find_closest_match(value, names_set)
+                if match is None:
+                    misunderstood.append(f"{param}: {value}")
+                else:
+                    self._set_function_arg_to_cache(param, match)
+                    parameters[param] = (match, names_set)
+        commodityName = parameters["commodityName"][0]
+        shipName = parameters["shipName"][0]
+        positionName = parameters["positionName"][0]
 
         self._print_debug(
             f"Interpreted Parameters: Commodity: {commodityName}, Ship Name: {shipName}, Position: {positionName}, Amount: {commodityAmount}, Maximal Number of Locations: {maximalNumberOfLocations}"
@@ -1640,22 +1647,23 @@ class UEXcorpWingman(OpenAiWingman):
             self._print_debug("No commodity given. Ask for a commodity.", True)
             return "No commodity given. Ask for a commodity."
 
-        name_to_list = {
-            "commodityName": (commodityName, self.commodity_names),
-            "shipName": (shipName, self.ship_names),
-            "locationName": (positionName, self.tradeport_names + self.city_names + self.satellite_names + self.planet_names + self.system_names),
-        }
-
         misunderstood = []
-        for name, (value, list_) in name_to_list.items():
-            if value is not None and self._find_closest_match(value, list_) is None:
-                misunderstood.append(f"{name}: {value}")
-            else:
-                name_to_list[name] = (self._find_closest_match(value, list_), list_)
-
-        for name, (value, _) in name_to_list.items():
+        parameters = {
+            "shipName": (shipName, self.ship_names),
+            "locationName": (positionName, self.location_names_set),
+            "commodityName": (commodityName, self.commodity_names),
+        }
+        for param, (value, names_set) in parameters.items():
             if value is not None:
-                self._set_function_arg_to_cache(name, value)
+                match = self._find_closest_match(value, names_set)
+                if match is None:
+                    misunderstood.append(f"{param}: {value}")
+                else:
+                    self._set_function_arg_to_cache(param, match)
+                    parameters[param] = (match, names_set)
+        shipName = parameters["shipName"][0]
+        positionName = parameters["locationName"][0]
+        commodityName = parameters["commodityName"][0]
 
         self._print_debug(
             f"Interpreted Parameters: Commodity: {commodityName}, Ship Name: {shipName}, Position: {positionName}, Amount: {commodityAmount}, Maximal Number of Locations: {maximalNumberOfLocations}"
@@ -1816,20 +1824,28 @@ class UEXcorpWingman(OpenAiWingman):
         moneyToSpend = None if moneyToSpend is not None and int(moneyToSpend) < 1 else moneyToSpend
         freeCargoSpace = None if freeCargoSpace is not None and int(freeCargoSpace) < 1 else freeCargoSpace
 
-        location_names_set = set(self.tradeport_names + self.city_names + self.satellite_names + self.planet_names + self.system_names)
-
         misunderstood = []
-        for param, value, names_set, cache_key in [
-            ("Ship", shipName, self.ship_names, "shipName"),
-            ("Position Start", positionStartName, location_names_set, "locationName"),
-            ("Position End", positionEndName, location_names_set, "locationNameTarget"),
-            ("Commodity", commodityName, self.commodity_names, "commodityName"),
-        ]:
-            match = self._find_closest_match(value, names_set)
-            if match is None:
-                misunderstood.append(f"{param}: {value}")
-            else:
-                self._set_function_arg_to_cache(cache_key, match)
+        parameters = {
+            "shipName": (shipName, self.ship_names),
+            "positionStartName": (positionStartName, self.location_names_set),
+            "positionEndName": (positionEndName, self.location_names_set),
+            "commodityName": (commodityName, self.commodity_names),
+        }
+        for param, (value, names_set) in parameters.items():
+            if value is not None:
+                match = self._find_closest_match(value, names_set)
+                if match is None:
+                    misunderstood.append(f"{param}: {value}")
+                else:
+                    self._set_function_arg_to_cache(param, match)
+                    parameters[param] = (match, names_set)
+        shipName = parameters["shipName"][0]
+        positionStartName = parameters["positionStartName"][0]
+        positionEndName = parameters["positionEndName"][0]
+        commodityName = parameters["commodityName"][0]
+
+        if moneyToSpend is not None:
+            self._set_function_arg_to_cache("money", moneyToSpend)
 
         self._print_debug(
             f"Interpreted Parameters: Ship: {shipName}, Position Start: {positionStartName}, Position End: {positionEndName}, Commodity Name: {commodityName}, Money: {moneyToSpend} aUEC, FreeCargoSpace: {freeCargoSpace} SCU, Maximal Number of Routes: {maximalNumberOfRoutes}, Illegal Allowed: {illegalCommoditesAllowed}"
@@ -1960,15 +1976,13 @@ class UEXcorpWingman(OpenAiWingman):
         if freeCargoSpace is not None and int(freeCargoSpace) < 1:
             freeCargoSpace = None
 
-        location_names_set = set(self.tradeport_names + self.city_names + self.satellite_names + self.planet_names + self.system_names)
         misunderstood = []
         parameters = {
             "shipName": (shipName, self.ship_names),
-            "locationName": (positionStartName, location_names_set),
-            "locationNameTarget": (positionEndName, location_names_set),
+            "locationName": (positionStartName, self.location_names_set),
+            "locationNameTarget": (positionEndName, self.location_names_set),
             "commodityName": (commodityName, self.commodity_names),
         }
-
         for param, (value, names_set) in parameters.items():
             if value is not None:
                 match = self._find_closest_match(value, names_set)
@@ -1976,6 +1990,11 @@ class UEXcorpWingman(OpenAiWingman):
                     misunderstood.append(f"{param}: {value}")
                 else:
                     self._set_function_arg_to_cache(param, match)
+                    parameters[param] = (match, names_set)
+        shipName = parameters["shipName"][0]
+        positionStartName = parameters["locationName"][0]
+        positionEndName = parameters["locationNameTarget"][0]
+        commodityName = parameters["commodityName"][0]
 
         self._set_function_arg_to_cache("money", moneyToSpend)
 
