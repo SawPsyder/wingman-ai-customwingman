@@ -9,6 +9,7 @@ import copy
 import os
 import collections
 import heapq
+import time
 from datetime import datetime
 import requests
 from services.secret_keeper import SecretKeeper
@@ -72,8 +73,14 @@ class UEXcorpWingman(OpenAiWingman):
         # add folder if not there yet
         if not os.path.exists(self.real_path):
             os.makedirs(self.real_path)
-        self.logfile = os.path.join(self.real_path, "uexcorp_error.log")
-        self.cachefile = os.path.join(self.real_path, "uexcorp_cache.json")
+        else : #TODO: REMOVE THIS AFTER v7 IS RELEASED
+            if os.path.exists(os.path.join(self.real_path, "uexcorp_cache.json")):
+                os.remove(os.path.join(self.real_path, "uexcorp_cache.json"))
+            if os.path.exists(os.path.join(self.real_path, "uexcorp_error.log")):
+                os.remove(os.path.join(self.real_path, "uexcorp_error.log"))
+
+        self.logfile = os.path.join(self.real_path, "error.log")
+        self.cachefile = os.path.join(self.real_path, "cache.json")
         logging.basicConfig(filename=self.logfile, level=logging.ERROR)
 
         self.debug = False
@@ -171,7 +178,7 @@ class UEXcorpWingman(OpenAiWingman):
             cached_arg = self.cache["function_args"].get(arg_name)
             if cached_arg is not None:
                 self._print_debug(
-                    f"Required function arg '{arg_name}' was not given and got overwritten by cache: {cached_arg}"
+                    f"'{arg_name}' was not given and got overwritten by cache: {cached_arg}"
                 )
                 return cached_arg
 
@@ -758,30 +765,29 @@ class UEXcorpWingman(OpenAiWingman):
             function_name, function_args
         )
 
-        # use try catch to catch errors in custom functions
+        functions = [
+            "get_best_trading_route",
+            "get_multiple_best_trading_routes",
+            "get_best_location_to_sell_to",
+            "get_multiple_best_locations_to_sell_to",
+            "get_best_location_to_buy_from",
+            "get_multiple_best_locations_to_buy_from",
+            "get_location_information",
+            "get_ship_information",
+            "get_commodity_information",
+            "reload_current_commodity_prices",
+            "show_cached_function_values",
+        ]
+
         try:
-            if function_name == "get_best_trading_route":
-                function_response = self._get_best_trading_route(**function_args)
-            if function_name == "get_best_location_to_sell_to":
-                function_response = self._get_best_location_to_sell_to(**function_args)
-            if function_name == "get_multiple_best_locations_to_sell_to":
-                function_response = self._get_multiple_best_locations_to_sell_to(**function_args)
-            if function_name == "get_best_location_to_buy_from":
-                function_response = self._get_best_location_to_buy_from(**function_args)
-            if function_name == "get_multiple_best_locations_to_buy_from":
-                function_response = self._get_multiple_best_locations_to_buy_from(**function_args)
-            if function_name == "get_location_information":
-                function_response = self._get_location_information(**function_args)
-            if function_name == "get_ship_information":
-                function_response = self._get_ship_information(**function_args)
-            if function_name == "get_commodity_information":
-                function_response = self._get_commodity_information(**function_args)
-            if function_name == "reload_current_commodity_prices":
-                function_response = self._reload_current_commodity_prices()
-            if function_name == "get_multiple_best_trading_routes":
-                function_response = self._get_multiple_best_trading_routes(**function_args)
-            if function_name == "show_cached_function_values":
-                function_response = self._show_cached_function_values()
+            if function_name in functions:
+                if self.uexcorp_debug:
+                    start = time.perf_counter()
+                self._print_debug(f"❖ Executing function: {function_name}")
+                function = getattr(self, "_" + function_name)
+                function_response = function(**function_args)
+                if self.uexcorp_debug:
+                    self._print_debug(f"...took {(time.perf_counter() - start):.2f}s")
         except Exception as e:
             logging.error(e, exc_info=True)
             file_object = open(self.logfile, 'a', encoding="UTF-8")
@@ -794,7 +800,7 @@ class UEXcorpWingman(OpenAiWingman):
             file_object.close()
             self._print_debug(f"Error while executing custom function: {function_name}\nCheck log file for more details.")
             function_response = f"Error while executing custom function: {function_name}"
-            function_response += "\nTell user there seems to be an error in the code. And you must say that it should be report to the 'uexcorp wingman developers'."
+            function_response += "\nTell user there seems to be an error. And you must say that it should be report to the 'uexcorp wingman developers'."
 
         return function_response, instant_response
 
@@ -824,7 +830,7 @@ class UEXcorpWingman(OpenAiWingman):
                             "commodityName": {"type": "string"},
                             "illegalCommoditesAllowed": {"type": "boolean"},
                         },
-                        # "required": ["shipName", "positionStartName"],
+                        "required": ["shipName", "positionStartName"],
                         # "optional": ["moneyToSpend", "freeCargoSpace", "positionEndName", "commodityName", "illegalCommoditesAllowed"],
                     },
                 },
@@ -848,8 +854,8 @@ class UEXcorpWingman(OpenAiWingman):
                             "illegalCommoditesAllowed": {"type": "boolean"},
                             "maximalNumberOfRoutes": {"type": "number"},
                         },
-                        # "required": ["shipName", "positionStartName"],
-                        # "optional": ["moneyToSpend", "freeCargoSpace", "positionEndName", "commodityName", "illegalCommoditesAllowed", "maximalNumberOfRoutes"],
+                        "required": ["shipName", "positionStartName"],
+                        "optional": ["moneyToSpend", "freeCargoSpace", "positionEndName", "commodityName", "illegalCommoditesAllowed", "maximalNumberOfRoutes"],
                     },
                 },
             },
@@ -868,8 +874,8 @@ class UEXcorpWingman(OpenAiWingman):
                             "positionName": {"type": "string"},
                             "commodityAmount": {"type": "number"},
                         },
-                        # "required": ["commodityName"],
-                        # "optional": ["shipName", "positionName", "commodityAmount"],
+                        "required": ["commodityName"],
+                        "optional": ["shipName", "positionName", "commodityAmount"],
                     },
                 },
             },
@@ -889,8 +895,8 @@ class UEXcorpWingman(OpenAiWingman):
                             "commodityAmount": {"type": "number"},
                             "maximalNumberOfLocations": {"type": "number"},
                         },
-                        # "required": ["commodityName"],
-                        # "optional": ["shipName", "positionName", "commodityAmount", "maximalNumberOfLocations"],
+                        "required": ["commodityName"],
+                        "optional": ["shipName", "positionName", "commodityAmount", "maximalNumberOfLocations"],
                     },
                 },
             },
@@ -909,8 +915,8 @@ class UEXcorpWingman(OpenAiWingman):
                             "positionName": {"type": "string"},
                             "commodityAmount": {"type": "number"},
                         },
-                        # "required": ["commodityName"],
-                        # "optional": ["shipName", "positionName", "commodityAmount"],
+                        "required": ["commodityName"],
+                        "optional": ["shipName", "positionName", "commodityAmount"],
                     },
                 },
             },
@@ -930,8 +936,8 @@ class UEXcorpWingman(OpenAiWingman):
                             "commodityAmount": {"type": "number"},
                             "maximalNumberOfLocations": {"type": "number"},
                         },
-                        # "required": ["commodityName"],
-                        # "optional": ["shipName", "positionName", "commodityAmount", "maximalNumberOfLocations"],
+                        "required": ["commodityName"],
+                        "optional": ["shipName", "positionName", "commodityAmount", "maximalNumberOfLocations"],
                     },
                 },
             },
@@ -947,7 +953,7 @@ class UEXcorpWingman(OpenAiWingman):
                         "properties": {
                             "locationName": {"type": "string"},
                         },
-                        # "required": ["locationName"],
+                        "required": ["locationName"],
                     },
                 },
             },
@@ -963,7 +969,7 @@ class UEXcorpWingman(OpenAiWingman):
                         "properties": {
                             "shipName": {"type": "string"},
                         },
-                        # "required": ["shipName"],
+                        "required": ["shipName"],
                     },
                 },
             },
@@ -979,7 +985,7 @@ class UEXcorpWingman(OpenAiWingman):
                         "properties": {
                             "commodityName": {"type": "string"},
                         },
-                        # "required": ["commodityName"],
+                        "required": ["commodityName"],
                     },
                 },
             },
@@ -1023,7 +1029,6 @@ class UEXcorpWingman(OpenAiWingman):
             str: A message indicating that the cached function's argument values have been printed to the console.
         """
         if self.uexcorp_debug:
-            self._print_debug("Called custom function _show_cached_function_values")
             self._print_debug(self.cache["function_args"])
             return "Please check the console for the cached function's argument values."
         return ""
@@ -1035,7 +1040,6 @@ class UEXcorpWingman(OpenAiWingman):
         Returns:
             str: A message indicating that the current commodity prices have been reloaded.
         """
-        self._print_debug("Called custom function _reload_current_commodity_prices")
         self._load_data(reload=True)
         # clear cached data
         for key in self.cache:
@@ -1054,8 +1058,7 @@ class UEXcorpWingman(OpenAiWingman):
         Returns:
             str: The information about the commodity in JSON format, or an error message if the commodity is not found.
         """
-        self._print_debug("Called custom function _get_commodity_information")
-        self._print_debug(f"Parameters: Commodity: {commodityName}")
+        self._print_debug(f"Parameters: Commodity: {commodityName}", True)
 
         commodityName = self._get_function_arg_from_cache(
             "commodityName", commodityName
@@ -1072,7 +1075,7 @@ class UEXcorpWingman(OpenAiWingman):
         else:
             commodityName = closest_match
 
-        self._print_debug(f"Interpreted Parameters: Commodity: {commodityName}")
+        self._print_debug(f"Interpreted Parameters: Commodity: {commodityName}", True)
 
         if misunderstood:
             misunderstood_str = ", ".join(misunderstood)
@@ -1099,8 +1102,7 @@ class UEXcorpWingman(OpenAiWingman):
             str: The ship information or an error message.
 
         """
-        self._print_debug("Called custom function _get_ship_information")
-        self._print_debug(f"Parameters: Ship: {shipName}")
+        self._print_debug(f"Parameters: Ship: {shipName}", True)
 
         shipName = self._get_function_arg_from_cache(
             "shipName", shipName
@@ -1117,7 +1119,7 @@ class UEXcorpWingman(OpenAiWingman):
         else:
             shipName = closest_match
 
-        self._print_debug(f"Interpreted Parameters: Ship: {shipName}")
+        self._print_debug(f"Interpreted Parameters: Ship: {shipName}", True)
 
         if misunderstood:
             misunderstood_str = ", ".join(misunderstood)
@@ -1143,8 +1145,7 @@ class UEXcorpWingman(OpenAiWingman):
         Returns:
             str: The information about the location in JSON format, or an error message if the location is not found.
         """
-        self._print_debug("Called custom function _get_location_information")
-        self._print_debug(f"Parameters: Location: {locationName}")
+        self._print_debug(f"Parameters: Location: {locationName}", True)
 
         locationName = self._get_function_arg_from_cache(
             "locationName", locationName
@@ -1161,7 +1162,7 @@ class UEXcorpWingman(OpenAiWingman):
         else:
             locationName = closest_match
 
-        self._print_debug(f"Interpreted Parameters: Location: {locationName}")
+        self._print_debug(f"Interpreted Parameters: Location: {locationName}", True)
 
         if misunderstood:
             misunderstood_str = ", ".join(misunderstood)
@@ -1229,8 +1230,9 @@ class UEXcorpWingman(OpenAiWingman):
         tradeport["satellite"] = self._get_satellite_name_by_code(tradeport["satellite"])
         tradeport["hull_trading"] = "Trading with MISC Hull C is possible." if tradeport["hull_trading"] else "Trading with MISC Hull C is not possible."
 
-        buyable_commodities = [f"{data['name']} for {data['price_buy']} aUEC per SCU" for commodity_code, data in tradeport["prices"].items() if data["operation"] == "buy"]
-        sellable_commodities = [f"{data['name']} for {data['price_sell']} aUEC per SCU" for commodity_code, data in tradeport["prices"].items() if data["operation"] == "sell"]
+        if "prices" in tradeport:
+            buyable_commodities = [f"{data['name']} for {data['price_buy']} aUEC per SCU" for commodity_code, data in tradeport["prices"].items() if data["operation"] == "buy"]
+            sellable_commodities = [f"{data['name']} for {data['price_sell']} aUEC per SCU" for commodity_code, data in tradeport["prices"].items() if data["operation"] == "sell"]
 
         if buyable_commodities:
             tradeport["buyable_commodities"] = ", ".join(buyable_commodities)
@@ -1559,9 +1561,9 @@ class UEXcorpWingman(OpenAiWingman):
         commodityAmount: int = 1,
         maximalNumberOfLocations: int = 3,
     ) -> str:
-        self._print_debug("Called custom function _get_multiple_best_location_to_sell_to")
         self._print_debug(
-            f"Given Parameters: Commodity: {commodityName}, Ship Name: {shipName}, Current Position: {positionName}, Amount: {commodityAmount}, Maximal Number of Locations: {maximalNumberOfLocations}"
+            f"Given Parameters: Commodity: {commodityName}, Ship Name: {shipName}, Current Position: {positionName}, Amount: {commodityAmount}, Maximal Number of Locations: {maximalNumberOfLocations}",
+            True
         )
 
         commodityName = self._get_function_arg_from_cache("commodityName", commodityName)
@@ -1590,7 +1592,8 @@ class UEXcorpWingman(OpenAiWingman):
         positionName = parameters["positionName"][0]
 
         self._print_debug(
-            f"Interpreted Parameters: Commodity: {commodityName}, Ship Name: {shipName}, Position: {positionName}, Amount: {commodityAmount}, Maximal Number of Locations: {maximalNumberOfLocations}"
+            f"Interpreted Parameters: Commodity: {commodityName}, Ship Name: {shipName}, Position: {positionName}, Amount: {commodityAmount}, Maximal Number of Locations: {maximalNumberOfLocations}",
+            True
         )
 
         if misunderstood:
@@ -1635,9 +1638,9 @@ class UEXcorpWingman(OpenAiWingman):
         commodityAmount: int = 1,
         maximalNumberOfLocations: int = 3,
     ) -> str:
-        self._print_debug("Called custom function _get_multiple_best_location_to_buy_from")
         self._print_debug(
-            f"Given Parameters: Commodity: {commodityName}, Ship Name: {shipName}, Current Position: {positionName}, Amount: {commodityAmount}, Maximal Number of Locations: {maximalNumberOfLocations}"
+            f"Given Parameters: Commodity: {commodityName}, Ship Name: {shipName}, Current Position: {positionName}, Amount: {commodityAmount}, Maximal Number of Locations: {maximalNumberOfLocations}",
+            True
         )
 
         commodityName = self._get_function_arg_from_cache("commodityName", commodityName)
@@ -1666,7 +1669,8 @@ class UEXcorpWingman(OpenAiWingman):
         commodityName = parameters["commodityName"][0]
 
         self._print_debug(
-            f"Interpreted Parameters: Commodity: {commodityName}, Ship Name: {shipName}, Position: {positionName}, Amount: {commodityAmount}, Maximal Number of Locations: {maximalNumberOfLocations}"
+            f"Interpreted Parameters: Commodity: {commodityName}, Ship Name: {shipName}, Position: {positionName}, Amount: {commodityAmount}, Maximal Number of Locations: {maximalNumberOfLocations}",
+            True
         )
 
         if misunderstood:
@@ -1705,6 +1709,9 @@ class UEXcorpWingman(OpenAiWingman):
     def _get_data_location_sellprice(self, tradeport, commodity, ship=None, amount=1):
         if ship is not None and ship["hull_trading"] is True and tradeport["hull_trading"] is False:
             return None
+        
+        if "prices" not in tradeport:
+            return None
 
         commodity_code = commodity["code"]
         for code, price in tradeport["prices"].items():
@@ -1714,6 +1721,9 @@ class UEXcorpWingman(OpenAiWingman):
 
     def _get_data_location_buyprice(self, tradeport, commodity, ship=None, amount=1):
         if ship is not None and ship["hull_trading"] is True and tradeport["hull_trading"] is False:
+            return None
+        
+        if "prices" not in tradeport:
             return None
 
         commodity_code = commodity["code"]
@@ -1741,9 +1751,9 @@ class UEXcorpWingman(OpenAiWingman):
         Returns:
             str: A string containing information about the best selling location(s) and sell prices.
         """
-        self._print_debug("Called custom function _get_best_location_to_sell_to")
         self._print_debug(
-            f"Given Parameters: Commodity: {commodityName}, Ship Name: {shipName}, Current Position: {positionName}, Amount: {commodityAmount}"
+            f"Given Parameters: Commodity: {commodityName}, Ship Name: {shipName}, Current Position: {positionName}, Amount: {commodityAmount}",
+            True
         )
         return self._get_multiple_best_locations_to_sell_to(commodityName, shipName, positionName, commodityAmount, 1)
 
@@ -1766,9 +1776,9 @@ class UEXcorpWingman(OpenAiWingman):
         Returns:
             str: A string containing information about the best selling location(s) and sell prices.
         """
-        self._print_debug("Called custom function _get_best_location_to_buy_from")
         self._print_debug(
-            f"Given Parameters: Commodity: {commodityName}, Ship Name: {shipName}, Current Position: {positionName}, Amount: {commodityAmount}"
+            f"Given Parameters: Commodity: {commodityName}, Ship Name: {shipName}, Current Position: {positionName}, Amount: {commodityAmount}",
+            True
         )
         return self._get_multiple_best_locations_to_buy_from(commodityName, shipName, positionName, commodityAmount, 1)
 
@@ -1800,10 +1810,8 @@ class UEXcorpWingman(OpenAiWingman):
             str: A string representation of the trading routes found.
         """
         self._print_debug(
-            "Called custom function _get_multiple_best_trading_routes"
-        )
-        self._print_debug(
-            f"Parameters: Ship: {shipName}, Position Start: {positionStartName}, Position End: {positionEndName}, Commodity Name: {commodityName}, Money: {moneyToSpend} aUEC, FreeCargoSpace: {freeCargoSpace} SCU, Maximal Number of Routes: {maximalNumberOfRoutes}, Illegal Allowed: {illegalCommoditesAllowed}"
+            f"Parameters: Ship: {shipName}, Position Start: {positionStartName}, Position End: {positionEndName}, Commodity Name: {commodityName}, Money: {moneyToSpend} aUEC, FreeCargoSpace: {freeCargoSpace} SCU, Maximal Number of Routes: {maximalNumberOfRoutes}, Illegal Allowed: {illegalCommoditesAllowed}",
+            True
         )
 
         shipName = self._get_function_arg_from_cache("shipName", shipName)
@@ -1848,7 +1856,8 @@ class UEXcorpWingman(OpenAiWingman):
             self._set_function_arg_to_cache("money", moneyToSpend)
 
         self._print_debug(
-            f"Interpreted Parameters: Ship: {shipName}, Position Start: {positionStartName}, Position End: {positionEndName}, Commodity Name: {commodityName}, Money: {moneyToSpend} aUEC, FreeCargoSpace: {freeCargoSpace} SCU, Maximal Number of Routes: {maximalNumberOfRoutes}, Illegal Allowed: {illegalCommoditesAllowed}"
+            f"Interpreted Parameters: Ship: {shipName}, Position Start: {positionStartName}, Position End: {positionEndName}, Commodity Name: {commodityName}, Money: {moneyToSpend} aUEC, FreeCargoSpace: {freeCargoSpace} SCU, Maximal Number of Routes: {maximalNumberOfRoutes}, Illegal Allowed: {illegalCommoditesAllowed}",
+            True
         )
 
         self._set_function_arg_to_cache("money", moneyToSpend)
@@ -1883,8 +1892,8 @@ class UEXcorpWingman(OpenAiWingman):
             start_tradeports = self._get_tradeports_by_positionname(positionStartName) if positionStartName else self.tradeports
             end_tradeports = self._get_tradeports_by_positionname(positionEndName) if positionEndName else self.tradeports
 
-            start_tradeports = [tp for tp in start_tradeports if commodity["code"] in tp["prices"] and tp["prices"][commodity["code"]]["operation"] == "buy"]
-            end_tradeports = [tp for tp in end_tradeports if commodity["code"] in tp["prices"] and tp["prices"][commodity["code"]]["operation"] == "sell"]
+            start_tradeports = [tp for tp in start_tradeports if "prices" in tp and commodity["code"] in tp["prices"] and tp["prices"][commodity["code"]]["operation"] == "buy"]
+            end_tradeports = [tp for tp in end_tradeports if "prices" in tp and commodity["code"] in tp["prices"] and tp["prices"][commodity["code"]]["operation"] == "sell"]
 
             for start_tradeport in start_tradeports:
                 for end_tradeport in end_tradeports:
@@ -1954,9 +1963,9 @@ class UEXcorpWingman(OpenAiWingman):
             None
 
         """
-        self._print_debug("Called custom function _get_best_trading_route")
         self._print_debug(
-            f"Parameters: Ship: {shipName}, Position Start: {positionStartName}, Position End: {positionEndName},  Money: {moneyToSpend} aUEC, FreeCargoSpace: {freeCargoSpace} SCU, Commodity: {commodityName}, Illegal Allowed: {illegalCommoditesAllowed}"
+            f"Parameters: Ship: {shipName}, Position Start: {positionStartName}, Position End: {positionEndName},  Money: {moneyToSpend} aUEC, FreeCargoSpace: {freeCargoSpace} SCU, Commodity: {commodityName}, Illegal Allowed: {illegalCommoditesAllowed}",
+            True
         )
 
         shipName = self._get_function_arg_from_cache("shipName", shipName)
@@ -1999,7 +2008,8 @@ class UEXcorpWingman(OpenAiWingman):
         self._set_function_arg_to_cache("money", moneyToSpend)
 
         self._print_debug(
-            f"Interpreted Parameters: Ship: {shipName}, Position Start: {positionStartName}, Position End: {positionEndName},  Money: {moneyToSpend} aUEC, FreeCargoSpace: {freeCargoSpace} SCU, Commodity: {commodityName}, Illegal Allowed: {illegalCommoditesAllowed}"
+            f"Interpreted Parameters: Ship: {shipName}, Position Start: {positionStartName}, Position End: {positionEndName},  Money: {moneyToSpend} aUEC, FreeCargoSpace: {freeCargoSpace} SCU, Commodity: {commodityName}, Illegal Allowed: {illegalCommoditesAllowed}",
+            True
         )
 
         if misunderstood:
@@ -2041,7 +2051,10 @@ class UEXcorpWingman(OpenAiWingman):
             )
             return "No valid start position given. Try a different position or just name a planet or star system."
 
-        end_tradeports = self._get_tradeports_by_positionname(positionEndName)
+        if positionEndName is None:
+            end_tradeports = self.tradeports
+        else:
+            end_tradeports = self._get_tradeports_by_positionname(positionEndName)
 
         if len(end_tradeports) < 1 and positionEndName is not None:
             self._print_debug("No valid end position given.", True)
@@ -2084,6 +2097,9 @@ class UEXcorpWingman(OpenAiWingman):
 
         for tradeport_start in start_tradeports:
             commodities = []
+            if "prices" not in tradeport_start:
+                continue
+
             for attr, price in tradeport_start["prices"].items():
                 if price["operation"] == "buy" and (
                     commodity_filter is None or commodity_filter["code"] == attr
@@ -2093,6 +2109,8 @@ class UEXcorpWingman(OpenAiWingman):
                         commodities.append(price)
 
             for tradeport_end in end_tradeports:
+                if "prices" not in tradeport_end or (commodity_filter is not None and commodity_filter["code"] not in tradeport_end["prices"]):
+                    continue
                 for attr, price in tradeport_end["prices"].items():
                     price["short_name"] = attr
                     for commodity in commodities:
