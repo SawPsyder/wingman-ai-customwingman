@@ -4,7 +4,7 @@ We are flattered to present to you our version of a great trading assistant.
 
 ## Version: v7
 
-Works with: Wingman AI 1.1.2b1
+Works with: Wingman AI 1.1.2b1 & 1.1.3b1
 
 If you have any feedback, please leave it here: [Discord Channel](https://discord.com/channels/1173573578604687360/1179594417926066196/1185567252184047656)
 
