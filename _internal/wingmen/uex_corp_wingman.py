@@ -579,6 +579,10 @@ class UEXcorpWingman(OpenAiWingman):
             self._print_debug(f"No closest match found for '{search}' in list. Returning None.", True)
             return None
 
+        azure_config = None
+        if self.conversation_provider == "azure":
+            azure_config = self._get_azure_config("conversation")
+
         # openai matches
         response = self.openai.ask(
             messages=[
@@ -601,9 +605,11 @@ class UEXcorpWingman(OpenAiWingman):
                     "role": "user",
                 },
             ],
-            model="gpt-3.5-turbo-1106",
+            model=self.config["openai"].get("conversation_model"),
+            azure_config=azure_config,
         )
         answer = response.choices[0].message.content
+        self._print_debug(f"OpenAI answered: '{search}'", True)
 
         if answer == "None" or answer not in closest_matches:
             self._print_debug(f"No closest match found for '{search}' in list. Returning None.", True)
