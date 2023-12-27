@@ -1495,11 +1495,13 @@ class UEXcorpWingman(OpenAiWingman):
             tradeport = self._get_tradeport_by_code(position["tradeport"])
             position["tradeport"] = self._format_tradeport_name(tradeport)
             for key in keys:
-                name = getattr(self, f"_get_{key}_name_by_code")(tradeport[key])
-                if name:
-                    position[key] = name
-                else:
-                    position.pop(key, None)
+                function_name = f"_get_{key}_name_by_code"
+                if function_name in dir(self):
+                    name = getattr(self, function_name)(tradeport[key])
+                    if name:
+                        position[key] = name
+                    else:
+                        position.pop(key, None)
             position["store"] = "Refinery"  # TODO: remove this when refinery is implemented
         position["price"] = f"{position['price']} aUEC"
 
