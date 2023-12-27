@@ -2,7 +2,7 @@
 
 We are flattered to present to you our version of a great trading assistant.
 
-## Version: v7
+## Version: v8
 
 Works with: Wingman AI 1.1.2b1 & 1.1.3b1
 

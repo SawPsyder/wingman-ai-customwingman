@@ -73,11 +73,6 @@ class UEXcorpWingman(OpenAiWingman):
         # add folder if not there yet
         if not os.path.exists(self.real_path):
             os.makedirs(self.real_path)
-        else : #TODO: REMOVE THIS AFTER v7 IS RELEASED
-            if os.path.exists(os.path.join(self.real_path, "uexcorp_cache.json")):
-                os.remove(os.path.join(self.real_path, "uexcorp_cache.json"))
-            if os.path.exists(os.path.join(self.real_path, "uexcorp_error.log")):
-                os.remove(os.path.join(self.real_path, "uexcorp_error.log"))
 
         self.logfile = os.path.join(self.real_path, "error.log")
         self.cachefile = os.path.join(self.real_path, "cache.json")
@@ -85,7 +80,7 @@ class UEXcorpWingman(OpenAiWingman):
 
         self.debug = False
 
-        self.uexcorp_version = "v7"
+        self.uexcorp_version = "v8"
         self.uexcorp_api_url = ""
         self.uexcorp_timeout = 5
 
