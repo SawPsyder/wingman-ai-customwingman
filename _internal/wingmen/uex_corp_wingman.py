@@ -566,7 +566,7 @@ class UEXcorpWingman(OpenAiWingman):
             return search
 
         # make a list of possible matches
-        closest_matches = difflib.get_close_matches(search, lst, n=15, cutoff=0.2)
+        closest_matches = difflib.get_close_matches(search, lst, n=10, cutoff=0.2)
         closest_matches.extend(item for item in lst if search.lower() in item.lower())
         self._print_debug(f"Making a list for closest matches for search term '{search}': {', '.join(closest_matches)}", True)
 
@@ -603,8 +603,18 @@ class UEXcorpWingman(OpenAiWingman):
             model=self.config["openai"].get("conversation_model"),
             azure_config=azure_config,
         )
+
+        if not response or not response.choices:
+            dumb_match = difflib.get_close_matches(search, closest_matches, n=1, cutoff=0.9)
+            if dumb_match:
+                self._print_debug(f"OpenAI did not answer for '{search}'. Returning dumb match '{dumb_match}'", True)
+                return dumb_match[0]
+            else:
+                self._print_debug(f"OpenAI did not answer for '{search}' and dumb match not possible. Returning None.", True)
+                return None
+            
         answer = response.choices[0].message.content
-        self._print_debug(f"OpenAI answered: '{search}'", True)
+        self._print_debug(f"OpenAI answered: '{answer}'", True)
 
         if answer == "None" or answer not in closest_matches:
             self._print_debug(f"No closest match found for '{search}' in list. Returning None.", True)
