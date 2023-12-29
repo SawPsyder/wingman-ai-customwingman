@@ -785,6 +785,7 @@ class UEXcorpWingman(OpenAiWingman):
             "get_multiple_best_locations_to_buy_from",
             "get_location_information",
             "get_ship_information",
+            "get_ship_comparison",
             "get_commodity_information",
             "reload_current_commodity_prices",
             "show_cached_function_values",
@@ -989,6 +990,22 @@ class UEXcorpWingman(OpenAiWingman):
             {
                 "type": "function",
                 "function": {
+                    "name": "get_ship_comparison",
+                    "description": "Gives information about given ships. Also execute this function if the player asks for a ship information on multiple ships or a model series.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "shipNames": {"type": "array", "items": {"type": "string"}},
+                        },
+                        "required": ["shipNames"],
+                    },
+                },
+            },
+        )
+        tools.append(
+            {
+                "type": "function",
+                "function": {
                     "name": "get_commodity_information",
                     "description": "Gives information about the given commodity. If a player asks for information about a commodity, this function needs to be executed.",
                     "parameters": {
@@ -1145,6 +1162,49 @@ class UEXcorpWingman(OpenAiWingman):
             output_ship = self._get_converted_ship_for_output(ship)
             self._print_debug(output_ship, True)
             return json.dumps(output_ship)
+        
+    def _get_ship_comparison(self, shipNames: list[str] = None) -> str:
+        """
+        Retrieves information about multiple ships.
+
+        Args:
+            shipNames (list[str], optional): The names of the ships. Defaults to None.
+
+        Returns:
+            str: The ship information or an error message.
+        """
+        self._print_debug(f"Parameters: Ships: {', '.join(shipNames)}", True)
+
+        if shipNames is None or not shipNames:
+            self._print_debug("No ship given. Ask for a ship. Dont say sorry.", True)
+            return "No ship given. Ask for a ship. Dont say sorry."
+
+        misunderstood = []
+        ships = []
+        for shipname in shipNames:
+            closest_match = self._find_closest_match(shipname, self.ship_names)
+            if closest_match is None:
+                misunderstood.append(shipname)
+            else:
+                shipname = closest_match
+                ships.append(self._get_ship_by_name(shipname))
+
+        self._print_debug(f"Interpreted Parameters: Ships: {', '.join(shipNames)}", True)
+
+        if misunderstood:
+            self._print_debug(
+                f"These ship names do not exist in game. Exactly ask for clarification of these ships: {', '.join(misunderstood)}",
+                True
+            )
+            return f"These ship names do not exist in game. Exactly ask for clarification of these ships: {', '.join(misunderstood)}"
+
+        output = {}
+        for ship in ships:
+            output[self._format_ship_name(ship)] = self._get_converted_ship_for_output(ship)
+
+        output = "Point out differences between these ships but keep it short, like 4-5 sentences, and dont mention something both cant do, like getting rented:\n" + json.dumps(output)
+        self._print_debug(output, True)
+        return output
 
     def _get_location_information(self, locationName: str = None) -> str:
         """

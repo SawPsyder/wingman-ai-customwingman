@@ -56,6 +56,12 @@ Gives you some basic information about a ship and where to buy it.
 
 - **ship name** (Just the name without manufacturer. So "Cutlass Black" for example)
 
+### Ask for ship comparison
+
+Gives you some basic information about multiple ships and points out differences.
+
+- **ship names** (Just the name without manufacturer. So "Cutlass Black" and "Freelancer Max" for example. You can also mention a series. Like "Constellation")
+
 ### Ask for location information
 
 Gives you some basic information and buy/sell offers of a location.
