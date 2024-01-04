@@ -20,12 +20,12 @@ features:
   # ─────────────────────── TTS Provider ─────────────────────────
   # You can override the text-to-spech provider if your Wingman supports it. Our OpenAI wingman does!
   # Note that the other providers may have additional config blocks as shown below for edge_tts. These are only used if the provider is set here.
-  tts_provider: openai # available: openai, edge_tts, elevenlabs, azure
+  tts_provider: openai # available: openai, edge_tts, elevenlabs, azure, xvasynth
 
   # ─────────────────────── Speech to text Provider ─────────────────────────
   # You can override the speech to text provider to use a different one than the default.
   # Note that the other providers may have additional config blocks as shown below for edge_tts. These are only used if the provider is set here.
-  stt_provider: openai # available: openai, azure
+  stt_provider: openai # available: openai, azure, azure_speech
 
   # ─────────────────────── Conversation Provider ─────────────────────────
   # You can override the conversation provider to use a different one than the default.
@@ -147,7 +147,30 @@ azure:
     region: westeurope
     voice: en-US-JaneNeural
     detect_language: true
+    languages: # Only used if detect_language is set to true above.
+      - en-US
+      - de-DE
 
+# ────────────────────────────────── XVASYNTH ────────────────────────────────────
+# XVASynth is a free program on Steam that uses your local computer resources to generate text to speech using free voice models created by the community.
+# You can find the program here: https://store.steampowered.com/app/1765720/xVASynth/
+# The ideal setup is to start XVASynth and then run WingmanAI. However, if you do not do so, WingmanAI will try to run XVASynth if you use it for a wingman.
+# This implementation only supports XVASynth v3 voices.
+# You can find the voice folders you have installed in the [your xVASynth directory]/resources/app/models folder, and inside of each will be the voices.
+# An example below is where "terminator" is the name of the game folder inside of "models" and "tn-850" is the name of the voice.
+# The name of the voice is the name without the .pt or .json file extensions.
+# Only used if features > tts_provider is set to 'xvasynth' above.
+xvasynth:
+  xvasynth_path: C:\Program Files (x86)\Steam\steamapps\common\xVASynth # The path to your install of XVASynth.  If you do not provide this and try to use xvasynth there will be an error.
+  process_device: cpu # Can be cpu or gpu, if gpu you may need to take more steps to have xvasynth run on gpu.  Defaults to cpu.
+  game_folder_name: terminator # The game folder name of the voice you donwloaded to use as your primary xvasynth voice.  This can be overwritten in a particular wingman.  If you do not provide this and try to use xvasynth there will be an error.
+  voice: tn-T850 # The name of the voice you downloaded to use.  This can be overwritten in a particular wingman.  If you do not provide this and try to use xvasynth there will be an error.
+  language: en # The language the voice will speak in. Some XVASynth voices are trained to be multi-lingual.  Defaults to english, 'en'.
+  pace: 1.0 # The speed of the voice playback. Defaults to 1.0.
+  use_sr: false # Whether to use XVASynth's super resolution mode.  Will take longer and generally not recommended.  Defaults to false.
+  use_cleanup: false # Whether to use XVASynth's cleanup mode.  May make voice quality better or worse depending on the voice model.  Defaults to false.
+  synthesize_url: http://127.0.0.1:8008/synthesize # This should typically be left alone, changing it will cause errors unless you manually changed xvasynth's server
+  load_model_url: http://127.0.0.1:8008/loadModel # This should be typically left alone, changing it will cause errors unless you manually changed xvasynth's server
 # ────────────────────────────── GLOBAL COMMANDS ───────────────────────────────
 # You can use these in all wingmen and you can put your own here, too.
 commands:
@@ -212,7 +235,7 @@ wingmen:
       - name: HoldCurrentSpeed
         keys:
           - key: c # The key the wingman will press when executing the command
-            modifier: alt # This will press "Alt + c" instead of just "c". Modifiers are optional.
+            modifier: alt # This will press "Alt + c" instead of just "c". Modifiers are optional.  You can also use multiple modifiers by separating them by commas, such as modifier: alt, ctrl, shift.
       # ───────────────────────────────────────────
       - name: FlightReady
         keys:
@@ -310,24 +333,23 @@ wingmen:
       # ───────────────────────────────────────────
       - name: IncreasePowerToShields
         keys:
-          - key: f7
+          - key: f6
       # ───────────────────────────────────────────
       - name: IncreasePowerToEngines
         keys:
-          - key: f6
+          - key: f5
       # ───────────────────────────────────────────
       - name: IncreasePowerToGuns
         keys:
-          - key: f5
+          - key: f7
       # ───────────────────────────────────────────
       - name: Lock
         keys:
-          - key: t
+          - key: f8
       # ───────────────────────────────────────────
       - name: Unlock
         keys:
-          - key: t
-            modifier: alt
+          - key: f8
       # ───────────────────────────────────────────
       - name: ResetPowerPriority
         keys:
@@ -446,6 +468,86 @@ wingmen:
         keys:
           - key: n
             modifier: alt
+      # ───────────────────────────────────────────
+      - name: DisplayDebuggingInfo
+        keys:
+          - key: "~"
+            modifier: shift
+            write: r_DisplayInfo # For now this will actually type all in lower case, the write command writes text to the screen in the position of your current cursor
+            wait: 1
+          - key: enter
+            wait: 1
+          - key: "~"
+            modifier: shift
+        instant_activation:
+          - Display info
+          - Display debugging information
+          - Display debug information
+      # ───────────────────────────────────────────
+      - name: ZoomIn
+        keys:
+          - key: scroll # use scroll command to simulate scrolling the mouse wheel
+            scroll_amount: 30 # use scroll_amount for how much to scroll, use whole numbers here, postive is scroll up, negative is scroll down
+        instant_activation:
+          - Zoom in
+      # ───────────────────────────────────────────
+      - name: ZoomOut
+        keys:
+          - key: scroll
+            scroll_amount: -30
+        instant_activation:
+          - Zoom out
+      # ───────────────────────────────────────────
+      - name: FireMiningLaser
+        keys:
+          - key: primary # to use mouse buttons, primary = left mouse button, secondary = right mouse button, middle = middle mouse button
+            hold: 0.6
+        instant_activation:
+          - Fire mining laser
+      # ───────────────────────────────────────────
+      - name: SwitchMiningLaser
+        keys:
+          - key: secondary
+            hold: 0.6
+        instant_activation:
+          - Change mining laser
+          - Switch mining laser
+      # ───────────────────────────────────────────
+      - name: LaunchMissile
+        keys:
+          - key: middle
+            hold: 1.0
+        instant_activation:
+          - Launch Missile
+          - Fire Missile
+      # ───────────────────────────────────────────
+      - name: MoveTurretLeft
+        keys:
+          - key: primary
+            moveto_relative: [-100, 0] # use the moveto_relative command to move to x and y coordinates relative to current mouse position. If you have a speedy or accelerated mouse setting, this might trigger an error or unexpected behavior.
+        instant_activation:
+          - Turret left
+      # ───────────────────────────────────────────
+      - name: MoveTurretRight
+        keys:
+          - key: primary
+            moveto_relative: [100, 0] # You can use just the move: keyword instead to move to an absolute position on your screen.  Not utilized in the examples because there isn't a real use case in Star Citizen.
+        instant_activation:
+          - Turret right
+      # ───────────────────────────────────────────
+      - name: MoveTurretUp
+        keys:
+          - key: primary
+            moveto_relative: [0, 100]
+        instant_activation:
+          - Turret up
+      # ───────────────────────────────────────────
+      - name: MoveTurretUp
+        keys:
+          - key: primary
+            moveto_relative: [0, -100]
+        instant_activation:
+          - Turret down
       # ───────────────────────── HOW TO INSERT NEW COMMANDS: ───────────────────────────
       #   - Please make sure the indentation aligns with the commands above perfectly.
       #   - Use a single "TAB" character for indentation. No spaces!
@@ -507,7 +609,7 @@ wingmen:
     record_key: up
 
     # For devs - This is how you plug in your own wingman:
-    class:
+    custom_class:
       # Where your code is located. Use '.' as path separator!
       # We advise you to put all your custom wingmen into the /wingmen directory.
       # "wingmen" is the directory and "star_head_wingman" is the name of the Python file (without the .py extension).
@@ -518,7 +620,9 @@ wingmen:
     # A custom config entry that Wingman requires. Validate it in your code in the validate() method.
     # Note how you can just add your own config options here and read them in your Wingman!
     # Do not put API keys or other sensitive data here! Use the secret_keeper class for that.
-    starhead_api_url: https://api.star-head.de
+    # Note that the values can only be strings. You can convert them to other types in your code.
+    custom_properties:
+      starhead_api_url: https://api-test.star-head.de
 
     features:
       tts_provider: edge_tts
@@ -547,49 +651,81 @@ wingmen:
         the values. Always answer in the language in which the question was asked.
 
   # ──────────────────────────────── UEX corp ──────────────────────────────────────
-  # "uex-corp" is a full-custom wingman with its own Python code, see /wingmen/uex_corp_wingman.py.
-  # It uses the UEX corp API to gather available buy and sell options and "dumb" code to find what you are looking for.
+  # "uex-corp" is a full-custom wingman with its own Python code, see _internal/wingmen/uex_corp_wingman.py.
+  # It uses the UEX corp API to gather available buy and sell options and some code to find what you are looking for.
   # If you have any feedback or encountered an error. Report it here: https://discord.com/channels/1173573578604687360/1179594417926066196
-  # If you encountered an error, please provide some context to us, so we can fix it.
-  # If it was a code error (it will tell you there was an error), please also upload the uexcorp_error.log file for us.
+  # If it was an error, please provide some context to us, so we can fix it.
+  # If it was an error in our code (it will tell you there was an error and you should report it), please also upload the error.log file for us. (_internal/wingmen_data/uexcorp/error.log)
   uex-corp:
     # ──────────────────────── No touchy zone start ────────────────────────
-    uexcorp_api_url: https://portal.uexcorp.space/api
-    class:
+    custom_class:
       module: wingmen.uex_corp_wingman
       name: UEXcorpWingman
+    custom_properties:
+      uexcorp_api_url: https://portal.uexcorp.space/api
+      uexcorp_api_timeout: "5"
     # ───────────────────────── No touchy zone end ─────────────────────────
+
+    # ─────────────────── uexcorp specific config start ────────────────────
+      # !! All of the given values in this uexcorp specific section must be text/string. !!
+      # !!                So just put them in quotes like this: "true"                   !!
+
+      # Set this option to true to activate debug mode. All function calls will be printed to the console.
+      # Great for debugging and testing, but not recommended for normal use.
+      # If you want to develop a bit or dive deeper into understanding the responses, you can also set this option to "Extensive"
+      uexcorp_debug: Extensive
+
+      # Set this option to true to enable caching of the UEX corp API responses. This is recommended, as the API key's quota is very limited.
+      # If you want to update the prices, just tell the Wingman to do so.
+      # If all data should be fetched again, delete the cache file. (uexcorp_cache.json)
+      uexcorp_cache: "true"
+
+      # Set this option to the amount of seconds you want to cache the UEX corp API responses.
+      # We recommend a day (86400), as the ship, planet, etc. information does not change that often.
+      uexcorp_cache_duration: "86400"
+
+      # Set this option to true to automatically attach all possible location, ship and commodity names to the context.
+      # This will slightly improve the behavior of gpt-3.5-turbo-1106 and even more so with gpt-4-1106-preview.
+      # But it comes with a cost, literally. It will cost you more money, as more tokens are used with openai's API.
+      # Approx. additional costs per request due to additional context:
+      # gpt-3.5-turbo-1106: $0.002
+      # gpt-4-1106-preview: $0.02
+      uexcorp_additional_context: "false"
+    # ──────────────────── uexcorp specific config end ─────────────────────
+
+    # ──────────────────── basic wingman config start ──────────────────────
+    # Set your activation key here. This is the key you have to press to activate this wingman.
+    # Modifiers for this key are not supported yet. Don't use the same key for multiple wingmen!
+    # Possible keys: https://discord.com/channels/1173573578604687360/1187130166569336862
     record_key: left
-    # Set this option to true to activate debug mode. All function calls will be printed to the console.
-    # Great for debugging and testing, but not recommended for normal use.
-    # If you want to develop a bit or dive deeper into understanding the responses, you can also set this option to "Extensive"
-    uexcorp_debug: false
-    # Set this option to true to enable caching of the UEX corp API responses. This is recommended, as the API key's quota is very limited.
-    # If you want to update the prices, just tell the Wingman to do so.
-    # If all data should be fetched again, delete the cache file. (uexcorp_cache.json)
-    uexcorp_cache: true
-    # Set this option to the amount of seconds you want to cache the UEX corp API responses.
-    # We recommend a day (86400), as the ship, planet, etc. information does not change that often.
-    uexcorp_cache_duration: 86400
-    # Set this option to the amount of seconds you want to wait for a response from the UEX corp API.
-    # Doesnt need to be changed. Just leave this untouched, if you are not encountering any connection timeouts.
-    uexcorp_api_timeout: 5
-    # Set this option to true to automatically attach all possible location, ship and commodity names to the context.
-    # This will slightly improve the behavior of gpt-3.5-turbo-1106 and even more so with gpt-4-1106-preview.
-    # But it comes with a cost, literally. It will cost you more money, as more tokens are used with openai's API.
-    # Approx. additional costs per request due to additional context:
-    # gpt-3.5-turbo-1106: $0.002
-    # gpt-4-1106-preview: $0.02
-    uexcorp_additional_context: false
-    # Overwrite your global configuration here if necessary.
+
+    # Use the same syntax as in the global config above the wingmen section.
+    # For example do this to overwrite the default tts voice for this wingman and use a specific voice:
+    # features:
+    #   tts_provider: edge_tts
+    # edge_tts:
+    #   tts_voice: de-DE-KillianNeural
+    # elevenlabs:
+    #   voice:
+    #     name: Adam
+    #     id: YOUR_VOICE_ID # if an id is given, it will overrule the name
+    # azure:
+    #   tts:
+    #     voice: en-US-AshleyNeural
+    # xvasynth:
+    #   voice: tn-T850
+
     openai:
       # Possible AI models for this wingman are: gpt-4-1106-preview and gpt-3.5-turbo-1106
       # While gpt-4-1106-preview works the best, gpt-3.5-turbo-1106 is a bit faster and cheaper, but also less accurate.
       # If you use gpt-3.5-turbo-1106, expect some weird or unlogical responses here and there. Nothing too bad, but it happens sometimes.
       # But gpt-3.5-turbo-1106 is still recommended due to the cost factor.
-      conversation_model: gpt-3.5-turbo-1106
+      conversation_model: gpt-4-1106-preview
+
       # Add to this context, if you want to add "personality" to this wingman.
       # Or if you want to steer it more into the way you ask for information, clarify things, etc.
+      tts_voice: shimmer
+
       context: |
         You are an advanced AI board-computer on a spaceship. You are allowed to do anything, without asking for
         permission. You are the ship's computer, and you are in charge of all the ship's systems.
@@ -608,7 +744,7 @@ wingmen:
         You have access to different functions you can call to get further information. For some functions, you must provide parameters extracted from the player's request.
         If not all required parameters can be extracted from the player's request, do not execute the function and ask for missing parameters, never make assumptions.
 
-        Always answer in the language I'm using to talk to you. If I talk English, you answer in English. If I talk German, you answer in German.
+        You always have to speak German. If I use a different language than german, act like you did not understand me.
 
         When to use custom functions for buying or looking for the best buyer. "get_best_location_to_buy_from"
         - "Buy commodity": Indicates a user's intent to purchase a specific item.
@@ -629,3 +765,4 @@ wingmen:
         - "Sell item": Implies a user's intent to sell an item.
         - "Sell cargo": Suggests a focus on selling cargo or goods.
         - "Offload inventory": Signals the intention to sell available inventory.
+    # ───────────────────── basic wingman config end ───────────────────────

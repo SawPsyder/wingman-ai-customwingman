@@ -12,7 +12,16 @@ import heapq
 import time
 from datetime import datetime
 import requests
-from services.secret_keeper import SecretKeeper
+from api.interface import (
+    WingmanConfig,
+    WingmanInitializationError
+)
+from api.enums import (
+    LogType,
+    WingmanInitializationErrorType,
+    OpenAiModel,
+    ConversationProvider,
+)
 from services.printr import Printr
 from wingmen.open_ai_wingman import OpenAiWingman
 
@@ -44,11 +53,19 @@ class UEXcorpWingman(OpenAiWingman):
         "VNDL": "Vanduul",
     }
 
+    CUSTOMCONFIG = {
+        "uexcorp_api_url": {"type":"str", "values":[]},
+        "uexcorp_api_timeout": {"type":"int", "values":[]},
+        "uexcorp_debug": {"type":"auto", "values":["true", "false", "Extensive"]},
+        "uexcorp_cache": {"type":"bool", "values":[]},
+        "uexcorp_cache_duration": {"type":"int", "values":[]},
+        "uexcorp_additional_context": {"type":"bool", "values":[]},
+    }
+
     def __init__(
         self,
         name: str,
-        config: dict[str, any],
-        secret_keeper: SecretKeeper,
+        config: WingmanConfig,
         app_root_dir: str,
     ) -> None:
         """
@@ -57,7 +74,7 @@ class UEXcorpWingman(OpenAiWingman):
         Args:
             name (str): The name of the wingman.
             config (dict[str, any]): The configuration settings for the wingman.
-            secret_keeper (SecretKeeper): The secret keeper to retrieve secrets from.
+            app_root_dir (str): The root directory of the application.
             
         Returns:
             None
@@ -65,7 +82,6 @@ class UEXcorpWingman(OpenAiWingman):
         super().__init__(
             name=name,
             config=config,
-            secret_keeper=secret_keeper,
             app_root_dir=app_root_dir
         )
 
@@ -78,17 +94,15 @@ class UEXcorpWingman(OpenAiWingman):
         self.cachefile = os.path.join(self.real_path, "cache.json")
         logging.basicConfig(filename=self.logfile, level=logging.ERROR)
 
-        self.debug = False
-
         self.uexcorp_version = "v8"
-        self.uexcorp_api_url = ""
-        self.uexcorp_timeout = 5
 
-        self.uexcorp_apikey = None
-        self.uexcorp_debug = False
-        self.uexcorp_cache = True
-        self.uexcorp_cache_duration = 3600
-        self.uexcorp_additional_context = False
+        self.uexcorp_api_url = None
+        self.uexcorp_api_key = None
+        self.uexcorp_api_timeout = None
+        self.uexcorp_debug = None
+        self.uexcorp_cache = None
+        self.uexcorp_cache_duration = None
+        self.uexcorp_additional_context = None
 
         self.ships = []
         self.ship_names = []
@@ -150,8 +164,8 @@ class UEXcorpWingman(OpenAiWingman):
             return
 
         if self.uexcorp_debug == "Extensive" or not is_extensive:
-            tag = 'info' if not is_extensive else 'warn'
-            printr.print(message, tags=tag)
+            tag = LogType.INFO if not is_extensive else LogType.WARNING
+            printr.print(message, color=tag)
 
     def _get_function_arg_from_cache(
         self, arg_name: str, arg_value: str | int = None
@@ -208,38 +222,76 @@ class UEXcorpWingman(OpenAiWingman):
             )
             function_args.pop(arg_name, None)
 
-    def validate(self) -> list[str]:
+    async def validate(self) -> list[str]:
         """
         Validates the configuration of the UEX Corp Wingman.
 
         Returns:
             A list of error messages indicating any missing or invalid configuration settings.
         """
-        # collect errors from the base class (if any)
-        errors: list[str] = super().validate()
+        errors: list[WingmanInitializationError] = await super().validate()
 
-        self.uexcorp_apikey = self.secret_keeper.retrieve(
-            requester=self.name,
-            key="uexcorp",
-            friendly_key_name="UEXcorp API key",
-            prompt_if_missing=True,
-        )
-        if not self.uexcorp_apikey:
+        self.uexcorp_api_key = await self.retrieve_secret("uexcorp", errors)
+        # throw error and die and print apikey for debugging purposes
+        if not self.uexcorp_api_key:
             errors.append(
-                "Missing uexcorp api key. Add the uexcorp api key in you settings. \nYou can get one here: https://uexcorp.space/api.html"
+                    WingmanInitializationError(
+                        wingman_name=self.name,
+                        message="Missing uexcorp api key. Add the uexcorp api key in you settings. \nYou can get one here: https://uexcorp.space/api.html",
+                        error_type=WingmanInitializationErrorType.INVALID_CONFIG,
+                    )
+                )
+
+        for key, settings in self.CUSTOMCONFIG.items():
+            typesettings = settings["type"]
+            valueoptions = settings["values"]
+            if not key in self.config.custom_properties or self.config.custom_properties[key] == "":
+                errors.append(
+                    WingmanInitializationError(
+                        wingman_name=self.name,
+                        message=f"Missing custom property '{key}' in config",
+                        error_type=WingmanInitializationErrorType.INVALID_CONFIG,
+                    )
+                )
+            elif valueoptions and not self.config.custom_properties[key] in valueoptions:
+                errors.append(
+                    WingmanInitializationError(
+                        wingman_name=self.name,
+                        message=f"Invalid custom property '{key}' in config. Possible values: {', '.join(valueoptions)}",
+                        error_type=WingmanInitializationErrorType.INVALID_CONFIG,
+                    )
+                )
+            elif typesettings == "int":
+                try:
+                    int(self.config.custom_properties[key])
+                except ValueError:
+                    errors.append(
+                        WingmanInitializationError(
+                            wingman_name=self.name,
+                            message=f"Invalid custom property '{key}' in config. Value must be convertable to a number.",
+                            error_type=WingmanInitializationErrorType.INVALID_CONFIG,
+                        )
+                    )
+            elif typesettings == "bool":
+                if not self.config.custom_properties[key] in ["true", "false"]:
+                    errors.append(
+                        WingmanInitializationError(
+                            wingman_name=self.name,
+                            message=f"Invalid custom property '{key}' in config. Value must be 'true' or 'false'.",
+                            error_type=WingmanInitializationErrorType.INVALID_CONFIG,
+                        )
+                    )
+
+        try:
+            self._prepare_data()
+        except Exception as e:
+            errors.append(
+                WingmanInitializationError(
+                    wingman_name=self.name,
+                    message=f"Failed to load data: {e}",
+                    error_type=WingmanInitializationErrorType.UNKNOWN,
+                )
             )
-
-        # add custom errors
-        config_keys = ["uexcorp_api_url", "uexcorp_api_timeout", "uexcorp_cache", "uexcorp_cache_duration"]
-        none_keys = ["uexcorp_debug", "uexcorp_additional_context"]
-
-        for key in config_keys:
-            if not self.config.get(key):
-                errors.append(f"Missing '{key}' in config.yaml")
-
-        for key in none_keys:
-            if self.config.get(key) is None:
-                errors.append(f"Missing '{key}' in config.yaml")
 
         return errors
 
@@ -342,7 +394,7 @@ class UEXcorpWingman(OpenAiWingman):
                 boo_tradeports_reloaded = True
                 save_cache = True
 
-        if save_cache:
+        if save_cache and self.uexcorp_cache and self.uexcorp_cache_duration > 0 and self.ships and self.commodities and self.systems and self.tradeports and self.planets and self.satellites and self.cities:
             data = {
                 "timestamp": self._get_timestamp(),
                 "wingman_version": self.uexcorp_version,
@@ -400,7 +452,7 @@ class UEXcorpWingman(OpenAiWingman):
         for ship in self.ships:
             ship["hull_trading"] = ship["name"] in ships_for_hull_trading
 
-    def prepare(self) -> None:
+    def _prepare_data(self) -> None:
         """
         Prepares the wingman for execution by initializing necessary variables and loading data.
 
@@ -412,18 +464,31 @@ class UEXcorpWingman(OpenAiWingman):
         Returns:
             None
         """
-        # here validate() already ran, so we can safely access the config
 
-        self.debug = self.config.get("features", {}).get(
-            "debug_mode", False
-        )
+        for key, settings in self.CUSTOMCONFIG.items():
+            typesettings = settings["type"]
+            # valueoptions = settings["values"]
+            value = self.config.custom_properties.get(key)
 
-        self.uexcorp_api_url = self.config.get("uexcorp_api_url")
-        self.uexcorp_timeout = self.config.get("uexcorp_timeout")
-        self.uexcorp_debug = self.config.get("uexcorp_debug")
-        self.uexcorp_cache = self.config.get("uexcorp_cache")
-        self.uexcorp_cache_duration = self.config.get("uexcorp_cache_duration")
-        self.uexcorp_additional_context = self.config.get("uexcorp_additional_context")
+            if typesettings == "auto":
+                try:
+                    int(value)
+                    typesettings = "int"
+                except ValueError:
+                    if value == "true" or value == "false":
+                        typesettings = "bool"
+                    else:
+                        typesettings = "str"
+            
+            if typesettings == "bool":
+                value = value == "true"
+            elif typesettings == "int":
+                value = int(value)
+            
+            setattr(self, key, value)
+
+        if not self.uexcorp_debug and self.debug:
+            self.uexcorp_debug = True
 
         self.start_execution_benchmark()
         self._load_data()
@@ -512,6 +577,7 @@ class UEXcorpWingman(OpenAiWingman):
             + "\nOnly give functions parameters that were previously clearly provided by a request. Never assume any values, not the current ship, not the location, not the available money, nothing! Always send a None-value instead."
             + "\nIf you are not using one of the definied functions, dont give any trading recommendations."
             + "\nIf you execute a function that requires a commodity name, make sure to always provide the name in english, not in german or any other language."
+            + "\nNever mention optional function (tool) parameters to the user. Only mention the required parameters, if some are missing."
         )
 
     def _add_context(self, content: str):
@@ -574,13 +640,8 @@ class UEXcorpWingman(OpenAiWingman):
             self._print_debug(f"No closest match found for '{search}' in list. Returning None.", True)
             return None
 
-        azure_config = None
-        if self.conversation_provider == "azure":
-            azure_config = self._get_azure_config("conversation")
-
-        # openai matches
-        response = self.openai.ask(
-            messages=[
+        messages = (
+            [
                 {
                     "content": f"""
                         I'll give you just a string value.
@@ -600,8 +661,18 @@ class UEXcorpWingman(OpenAiWingman):
                     "role": "user",
                 },
             ],
-            model=self.config["openai"].get("conversation_model"),
-            azure_config=azure_config,
+        )
+        model = OpenAiModel.GPT_35_TURBO_1106
+
+        response = (
+            self.openai.ask(model=model.value, messages=messages)
+            if self.summarize_provider == ConversationProvider.OPENAI
+            else self.openai_azure.ask(
+                model=model.value,
+                messages=messages,
+                api_key=self.azure_api_keys["summarize"],
+                config=self.config.azure.summarize,
+            )
         )
 
         if not response or not response.choices:
@@ -633,7 +704,7 @@ class UEXcorpWingman(OpenAiWingman):
         Returns:
             dict: The header dictionary with the API key.
         """
-        key = self.uexcorp_apikey
+        key = self.uexcorp_api_key
         return {"api_key": key}
 
     def _fetch_uex_data(
@@ -653,7 +724,7 @@ class UEXcorpWingman(OpenAiWingman):
 
         try:
             response = requests.get(
-                url, params=params, timeout=self.uexcorp_timeout, headers=self._get_header()
+                url, params=params, timeout=self.uexcorp_api_timeout, headers=self._get_header()
             )
             response.raise_for_status()
         except requests.exceptions.RequestException as e:
@@ -843,7 +914,7 @@ class UEXcorpWingman(OpenAiWingman):
                             "illegalCommoditesAllowed": {"type": "boolean"},
                         },
                         "required": ["shipName", "positionStartName"],
-                        # "optional": ["moneyToSpend", "freeCargoSpace", "positionEndName", "commodityName", "illegalCommoditesAllowed"],
+                        "optional": ["moneyToSpend", "freeCargoSpace", "positionEndName", "commodityName", "illegalCommoditesAllowed"],
                     },
                 },
             },
@@ -1892,15 +1963,15 @@ class UEXcorpWingman(OpenAiWingman):
         self._set_function_arg_to_cache("illegalCommoditesAllowed", illegalCommoditesAllowed)
 
         if shipName is None:
-            self._print_debug("No ship given. Ask for a ship. Dont say sorry.", True)
-            return "No ship given. Ask for a ship. Dont say sorry."
+            self._print_debug("No ship given. Ask for a ship and make sure a start location is given. Everything else is optional.  Dont say sorry.", True)
+            return "No ship given. Ask for a ship and make sure a start location is given. Everything else is optional.  Dont say sorry."
 
         if positionStartName is None:
             self._print_debug(
-                "No start position given. Ask for a start position. (Station, Planet, Satellite, City or System)",
+                "No start position given. Ask for a start position. (Station, Planet, Satellite, City or System), as the ship information is given, thats all we need.",
                 True
             )
-            return "No start position given. Ask for a start position. (Station, Planet, Satellite, City or System)"
+            return "No start position given. Ask for a start position. (Station, Planet, Satellite, City or System), as the ship information is given, thats all we need."
 
         moneyToSpend = None if moneyToSpend is not None and int(moneyToSpend) < 1 else moneyToSpend
         freeCargoSpace = None if freeCargoSpace is not None and int(freeCargoSpace) < 1 else freeCargoSpace
@@ -2050,8 +2121,15 @@ class UEXcorpWingman(OpenAiWingman):
             self._set_function_arg_to_cache("illegalCommoditesAllowed", illegalCommoditesAllowed)
 
         if shipName is None:
-            self._print_debug("No ship given. Ask for a ship. Dont say sorry.", True)
-            return "No ship given. Ask for a ship. Dont say sorry."
+            self._print_debug("No ship given. Ask for a ship and make sure a start location is given. Everything else is optional. Dont say sorry.", True)
+            return "No ship given. Ask for a ship and make sure a start location is given. Everything else is optional."
+        
+        if positionStartName is None:
+            self._print_debug(
+                "No start position given. Ask for a start position. (Station, Planet, Satellite, City or System), as the ship information is given, thats all we need.",
+                True
+            )
+            return "No start position given. Ask for a start position. (Station, Planet, Satellite, City or System), as the ship information is given, thats all we need."
 
         if moneyToSpend is not None and int(moneyToSpend) < 1:
             moneyToSpend = None
