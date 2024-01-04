@@ -673,7 +673,7 @@ wingmen:
       # Set this option to true to activate debug mode. All function calls will be printed to the console.
       # Great for debugging and testing, but not recommended for normal use.
       # If you want to develop a bit or dive deeper into understanding the responses, you can also set this option to "Extensive"
-      uexcorp_debug: Extensive
+      uexcorp_debug: "true"
 
       # Set this option to true to enable caching of the UEX corp API responses. This is recommended, as the API key's quota is very limited.
       # If you want to update the prices, just tell the Wingman to do so.
