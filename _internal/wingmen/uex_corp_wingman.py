@@ -901,7 +901,7 @@ class UEXcorpWingman(OpenAiWingman):
                 "type": "function",
                 "function": {
                     "name": "get_best_trading_route",
-                    "description": "Finds the best trade route for a given spaceship and position.",
+                    "description": "Finds the best trade route for a given spaceship and position. Needs ship name and start position.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -924,7 +924,7 @@ class UEXcorpWingman(OpenAiWingman):
                 "type": "function",
                 "function": {
                     "name": "get_multiple_best_trading_routes",
-                    "description": "Finds all possible commodity trade options and gives back a selection of the best options. If an alternative route is searched for, execute this function.",
+                    "description": "Finds all possible commodity trade options and gives back a selection of the best options. If an alternative route is searched for, execute this function. Needs ship name and start position.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -948,7 +948,7 @@ class UEXcorpWingman(OpenAiWingman):
                 "type": "function",
                 "function": {
                     "name": "get_best_location_to_sell_to",
-                    "description": "Finds the best location at what the player can sell cargo at.",
+                    "description": "Finds the best location at what the player can sell cargo at. Needs commodity name.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -968,7 +968,7 @@ class UEXcorpWingman(OpenAiWingman):
                 "type": "function",
                 "function": {
                     "name": "get_multiple_best_locations_to_sell_to",
-                    "description": "Finds the best locations at what the player can sell cargo at. If an alternative sell location is searched for, execute this function.",
+                    "description": "Finds the best locations at what the player can sell cargo at. If an alternative sell location is searched for, execute this function. Needs commodity name.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -989,7 +989,7 @@ class UEXcorpWingman(OpenAiWingman):
                 "type": "function",
                 "function": {
                     "name": "get_best_location_to_buy_from",
-                    "description": "Finds the best location at what the player can buy cargo at. Only give positionName if the player specifically wanted to filter for it.",
+                    "description": "Finds the best location at what the player can buy cargo at. Only give positionName if the player specifically wanted to filter for it. Needs commodity name.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -1009,7 +1009,7 @@ class UEXcorpWingman(OpenAiWingman):
                 "type": "function",
                 "function": {
                     "name": "get_multiple_best_locations_to_buy_from",
-                    "description": "Finds the best locations at what the player can buy cargo at. If an alternative buy location is searched for, execute this function. Only give positionName if the player specifically wanted to filter for it.",
+                    "description": "Finds the best locations at what the player can buy cargo at. If an alternative buy location is searched for, execute this function. Only give positionName if the player specifically wanted to filter for it. Needs commodity name.",
                     "parameters": {
                         "type": "object",
                         "properties": {
