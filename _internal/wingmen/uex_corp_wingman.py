@@ -602,6 +602,32 @@ class UEXcorpWingman(OpenAiWingman):
             int: The current timestamp.
         """
         return int(datetime.now().timestamp())
+    
+    def _custom_gpt_call(self, messages) -> str:
+        """
+        Performs a GPT call and returns the response as a string.
+
+        Args:
+            messages: The messages to be sent to the model. 
+
+        Returns:
+            str: The response from the model.
+        """
+        ask_params = {
+            'messages': messages,
+            'model': self.config.openai.conversation_model
+        }
+
+        if self.conversation_provider == ConversationProvider.AZURE:
+            ask_params.update({
+                'api_key': self.azure_api_keys["conversation"],
+                'config': self.config.azure.conversation
+            })
+            completion = self.openai_azure.ask(**ask_params)
+        else:
+            completion = self.openai.ask(**ask_params)
+
+        return completion.choices[0].message.content if completion and completion.choices else ""
 
     def _find_closest_match(self, search: str|None, lst: list[str]|set[str]) -> str|None:
         """
@@ -632,7 +658,7 @@ class UEXcorpWingman(OpenAiWingman):
             return search
 
         # make a list of possible matches
-        closest_matches = difflib.get_close_matches(search, lst, n=10, cutoff=0.2)
+        closest_matches = difflib.get_close_matches(search, lst, n=10, cutoff=0.4)
         closest_matches.extend(item for item in lst if search.lower() in item.lower())
         self._print_debug(f"Making a list for closest matches for search term '{search}': {', '.join(closest_matches)}", True)
 
@@ -640,42 +666,29 @@ class UEXcorpWingman(OpenAiWingman):
             self._print_debug(f"No closest match found for '{search}' in list. Returning None.", True)
             return None
 
-        messages = (
-            [
-                {
-                    "content": f"""
-                        I'll give you just a string value.
-                        You will figure out, what value in this list represents this value best: {', '.join(closest_matches)}
-                        Keep in mind that the given string value can be misspelled or has missing words as it has its origin in a speech to text process.
-                        You must only return the value of the closest match to the given value from the defined list, nothing else.
-                        For example if "Hercules A2" is given and the list contains of "A2, C2, M2", you will return "A2" as string.
-                        Or if "C2" is given and the list contains of "A2 Hercules Star Lifter, C2 Monster Truck, M2 Extreme cool ship", you will return "C2 Monster Truck" as string.
-                        On longer search terms, prefer the exact match, if it is in the list.
-                        The response must not contain anything else, than the exact value of the closest match from the list.
-                        If you can't find a match, return 'None'. Do never return the given search value.
-                    """,
-                    "role": "system",
-                },
-                {
-                    "content": search,
-                    "role": "user",
-                },
-            ],
-        )
-        model = OpenAiModel.GPT_35_TURBO_1106
+        messages = [
+            {
+                'role': 'system',
+                'content': f"""
+                    I'll give you just a string value.
+                    You will figure out, what value in this list represents this value best: {', '.join(closest_matches)}
+                    Keep in mind that the given string value can be misspelled or has missing words as it has its origin in a speech to text process.
+                    You must only return the value of the closest match to the given value from the defined list, nothing else.
+                    For example if "Hercules A2" is given and the list contains of "A2, C2, M2", you will return "A2" as string.
+                    Or if "C2" is given and the list contains of "A2 Hercules Star Lifter, C2 Monster Truck, M2 Extreme cool ship", you will return "C2 Monster Truck" as string.
+                    On longer search terms, prefer the exact match, if it is in the list.
+                    The response must not contain anything else, than the exact value of the closest match from the list.
+                    If you can't find a match, return 'None'. Do never return the given search value.
+                """
+            },
+            {
+                'role': 'user',
+                'content': search,
+            },
+        ]
+        answer = self._custom_gpt_call(messages)
 
-        response = (
-            self.openai.ask(model=model.value, messages=messages)
-            if self.summarize_provider == ConversationProvider.OPENAI
-            else self.openai_azure.ask(
-                model=model.value,
-                messages=messages,
-                api_key=self.azure_api_keys["summarize"],
-                config=self.config.azure.summarize,
-            )
-        )
-
-        if not response or not response.choices:
+        if not answer:
             dumb_match = difflib.get_close_matches(search, closest_matches, n=1, cutoff=0.9)
             if dumb_match:
                 self._print_debug(f"OpenAI did not answer for '{search}'. Returning dumb match '{dumb_match}'", True)
@@ -683,8 +696,7 @@ class UEXcorpWingman(OpenAiWingman):
             else:
                 self._print_debug(f"OpenAI did not answer for '{search}' and dumb match not possible. Returning None.", True)
                 return None
-            
-        answer = response.choices[0].message.content
+
         self._print_debug(f"OpenAI answered: '{answer}'", True)
 
         if answer == "None" or answer not in closest_matches:
@@ -870,7 +882,7 @@ class UEXcorpWingman(OpenAiWingman):
                 function = getattr(self, "_" + function_name)
                 function_response = function(**function_args)
                 if self.uexcorp_debug:
-                    self._print_debug(f"...took {(time.perf_counter() - start):.2f}s")
+                    self._print_debug(f"...took {(time.perf_counter() - start):.2f}s", True)
         except Exception as e:
             logging.error(e, exc_info=True)
             file_object = open(self.logfile, 'a', encoding="UTF-8")
