@@ -744,7 +744,7 @@ wingmen:
         You have access to different functions you can call to get further information. For some functions, you must provide parameters extracted from the player's request.
         If not all required parameters can be extracted from the player's request, do not execute the function and ask for missing parameters, never make assumptions.
 
-        You always have to speak German. If I use a different language than german, act like you did not understand me.
+        Always answer in the language I'm using to talk to you. If I talk English, you answer in English. If I talk German, you answer in German.
 
         When to use custom functions for buying or looking for the best buyer. "get_best_location_to_buy_from"
         - "Buy commodity": Indicates a user's intent to purchase a specific item.
