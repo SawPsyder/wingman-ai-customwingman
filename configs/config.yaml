@@ -655,7 +655,7 @@ wingmen:
   # It uses the UEX corp API to gather available buy and sell options and some code to find what you are looking for.
   # If you have any feedback or encountered an error. Report it here: https://discord.com/channels/1173573578604687360/1179594417926066196
   # If it was an error, please provide some context to us, so we can fix it.
-  # If it was an error in our code (it will tell you there was an error and you should report it), please also upload the error.log file for us. (_internal/wingmen_data/uexcorp/error.log)
+  # If it was an error in our code (it will tell you there was an error and you should report it), please also upload the error.log file for us. (_internal/wingmen_data/uex_corp/error.log)
   uex-corp:
     # ──────────────────────── No touchy zone start ────────────────────────
     custom_class:
@@ -681,7 +681,7 @@ wingmen:
       uexcorp_cache: "true"
 
       # Set this option to the amount of seconds you want to cache the UEX corp API responses.
-      # We recommend a day (86400), as the ship, planet, etc. information does not change that often.
+      # We recommend a day ("86400"), as the ship, planet, etc. information does not change that often.
       uexcorp_cache_duration: "86400"
 
       # Set this option to true to automatically attach all possible location, ship and commodity names to the context.
@@ -691,6 +691,11 @@ wingmen:
       # gpt-3.5-turbo-1106: $0.002
       # gpt-4-1106-preview: $0.02
       uexcorp_additional_context: "false"
+
+      # Set this option to true to show only one of the most profitable routes for each commodity.
+      # Set this option to false to show all routes. This may include multiple routes for the same commodity.
+      # Recommended: "true"
+      uexcorp_summarize_routes_by_commodity: "false"
     # ──────────────────── uexcorp specific config end ─────────────────────
 
     # ──────────────────── basic wingman config start ──────────────────────
@@ -700,7 +705,7 @@ wingmen:
     record_key: left
 
     # Use the same syntax as in the global config above the wingmen section.
-    # For example do this to overwrite the default tts voice for this wingman and use a specific voice:
+    # For example do this to overwrite the default voice for this wingman and use a specific voice:
     # features:
     #   tts_provider: edge_tts
     # edge_tts:

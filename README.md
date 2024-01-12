@@ -22,9 +22,9 @@ This wingman is based on a data dump we retrieve from the [uexcorp API](https://
 
 ## What can I do then?
 
-### Ask for the best trading route
+### Ask for the best trading routes
 
-This gives you the best trading route for your available money and cargo space.
+This gives you the best trading routes for your ship and current location. You can also specify some parameters to get more specific results.
 
 - **ship name** (required, just the name without manufacturer. So "Cutlass Black" for example)
 - **current location** Anything like Stanton, Hurston, Yela, Area 18, ...
@@ -34,14 +34,7 @@ This gives you the best trading route for your available money and cargo space.
 - commodity (Want to trade something specific like gold?)
 - illegal commodities (Dont want to trade drugs? Then tell it not to give you these trading routes.)
 
-### Ask for one or more multiple trading routes
-
-This gives you a list of trading routes with different commodities.
-
-- Same parameters as "Ask for the best trading route"
-- And the optional number of provided routes. (Default: 2)
-
-### Ask for one or more best selling/buying location
+### Ask for best selling/buying locations
 
 Got something with you or want to buy something? Find the best price!
 

@@ -8,8 +8,8 @@ import re
 import copy
 import os
 import collections
-import heapq
 import time
+import heapq
 from datetime import datetime
 import requests
 from api.interface import (
@@ -60,6 +60,7 @@ class UEXcorpWingman(OpenAiWingman):
         "uexcorp_cache": {"type":"bool", "values":[]},
         "uexcorp_cache_duration": {"type":"int", "values":[]},
         "uexcorp_additional_context": {"type":"bool", "values":[]},
+        "uexcorp_summarize_routes_by_commodity": {"type":"bool", "values":[]},
     }
 
     def __init__(
@@ -103,6 +104,7 @@ class UEXcorpWingman(OpenAiWingman):
         self.uexcorp_cache = None
         self.uexcorp_cache_duration = None
         self.uexcorp_additional_context = None
+        self.uexcorp_summarize_routes_by_commodity = None
 
         self.ships = []
         self.ship_names = []
@@ -562,13 +564,13 @@ class UEXcorpWingman(OpenAiWingman):
 
         if self.uexcorp_additional_context:
             self._add_context(
-                'Possible values for function parameter "shipName". If none is explicitly given by player, use "None": '
+                'Possible values for function parameter "ship_name". If none is explicitly given by player, use "None": '
                 + ", ".join(self.ship_names)
                 + "\n\n"
-                + 'Possible values for function parameter "commodityName": '
+                + 'Possible values for function parameter "commodity_name": '
                 + ", ".join(self.commodity_names)
                 + "\n\n"
-                + 'Possible values for function parameters "positionStartName", "positionEndName", "currentPositionName" and "locationName": '
+                + 'Possible values for function parameters "position_start_name", "position_end_name", "currentposition_name" and "location_name": '
                 + ", ".join(self.location_names_set)
             )
 
@@ -642,7 +644,7 @@ class UEXcorpWingman(OpenAiWingman):
         Returns:
             str or None: The closest match found in the list, or None if no match is found.
         """
-        if search is None:
+        if search is None or search == "None":
             return None
 
         self._print_debug(f"Searching for closest match to '{search}' in list.", True)
@@ -859,27 +861,25 @@ class UEXcorpWingman(OpenAiWingman):
             function_name, function_args
         )
 
-        functions = [
-            "get_best_trading_route",
-            "get_multiple_best_trading_routes",
-            "get_best_location_to_sell_to",
-            "get_multiple_best_locations_to_sell_to",
-            "get_best_location_to_buy_from",
-            "get_multiple_best_locations_to_buy_from",
-            "get_location_information",
-            "get_ship_information",
-            "get_ship_comparison",
-            "get_commodity_information",
-            "reload_current_commodity_prices",
-            "show_cached_function_values",
-        ]
+        functions = {
+            "get_trading_routes": "get_trading_routes",
+            "get_locations_to_sell_to": "get_locations_to_sell_to",
+            "get_locations_to_buy_from": "get_locations_to_buy_from",
+            "get_location_information": "get_location_information",
+            "get_ship_information": "get_ship_information",
+            "get_ship_comparison": "get_ship_comparison",
+            "get_commodity_information": "get_commodity_information",
+            "get_commodity_prices_and_tradeports": "get_commodity_information",
+            "reload_current_commodity_prices": "reload_current_commodity_prices",
+            "show_cached_function_values": "show_cached_function_values",
+        }
 
         try:
             if function_name in functions:
                 if self.uexcorp_debug:
                     start = time.perf_counter()
                 self._print_debug(f"❖ Executing function: {function_name}")
-                function = getattr(self, "_" + function_name)
+                function = getattr(self, "_gpt_call_" + functions[function_name])
                 function_response = function(**function_args)
                 if self.uexcorp_debug:
                     self._print_debug(f"...took {(time.perf_counter() - start):.2f}s", True)
@@ -887,7 +887,7 @@ class UEXcorpWingman(OpenAiWingman):
             logging.error(e, exc_info=True)
             file_object = open(self.logfile, 'a', encoding="UTF-8")
             file_object.write("========================================================================================\n")
-            file_object.write(f"Above error while executing custom function: _{function_name}\n")
+            file_object.write(f"Above error while executing custom function: _gpt_call_{function_name}\n")
             file_object.write(f"With parameters: {function_args}\n")
             file_object.write(f"On date: {datetime.now()}\n")
             file_object.write(f"Version: {self.uexcorp_version}\n")
@@ -912,21 +912,22 @@ class UEXcorpWingman(OpenAiWingman):
             {
                 "type": "function",
                 "function": {
-                    "name": "get_best_trading_route",
-                    "description": "Finds the best trade route for a given spaceship and position. Needs ship name and start position.",
+                    "name": "get_trading_routes",
+                    "description": "Finds all possible commodity trade options and gives back a selection of the best trade routes. Needs ship name and start position.",
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "shipName": {"type": "string"},
-                            "positionStartName": {"type": "string"},
-                            "moneyToSpend": {"type": "number"},
-                            "positionEndName": {"type": "string"},
-                            "freeCargoSpace": {"type": "number"},
-                            "commodityName": {"type": "string"},
-                            "illegalCommoditesAllowed": {"type": "boolean"},
+                            "ship_name": {"type": "string"},
+                            "position_start_name": {"type": "string"},
+                            "money_to_spend": {"type": "number"},
+                            "position_end_name": {"type": "string"},
+                            "free_cargo_space": {"type": "number"},
+                            "commodity_name": {"type": "string"},
+                            "illegal_commodites_allowed": {"type": "boolean"},
+                            "maximal_number_of_routes": {"type": "number"},
                         },
-                        "required": ["shipName", "positionStartName"],
-                        "optional": ["moneyToSpend", "freeCargoSpace", "positionEndName", "commodityName", "illegalCommoditesAllowed"],
+                        "required": ["ship_name", "position_start_name"],
+                        "optional": ["money_to_spend", "free_cargo_space", "position_end_name", "commodity_name", "illegal_commodites_allowed", "maximal_number_of_routes"],
                     },
                 },
             },
@@ -935,22 +936,19 @@ class UEXcorpWingman(OpenAiWingman):
             {
                 "type": "function",
                 "function": {
-                    "name": "get_multiple_best_trading_routes",
-                    "description": "Finds all possible commodity trade options and gives back a selection of the best options. If an alternative route is searched for, execute this function. Needs ship name and start position.",
+                    "name": "get_locations_to_sell_to",
+                    "description": "Finds the best locations at what the player can sell cargo at. Only give position_name if the player specifically wanted to filter for it. Needs commodity name.",
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "shipName": {"type": "string"},
-                            "positionStartName": {"type": "string"},
-                            "moneyToSpend": {"type": "number"},
-                            "positionEndName": {"type": "string"},
-                            "freeCargoSpace": {"type": "number"},
-                            "commodityName": {"type": "string"},
-                            "illegalCommoditesAllowed": {"type": "boolean"},
-                            "maximalNumberOfRoutes": {"type": "number"},
+                            "commodity_name": {"type": "string"},
+                            "ship_name": {"type": "string"},
+                            "position_name": {"type": "string"},
+                            "commodity_amount": {"type": "number"},
+                            "maximal_number_of_locations": {"type": "number"},
                         },
-                        "required": ["shipName", "positionStartName"],
-                        "optional": ["moneyToSpend", "freeCargoSpace", "positionEndName", "commodityName", "illegalCommoditesAllowed", "maximalNumberOfRoutes"],
+                        "required": ["commodity_name"],
+                        "optional": ["ship_name", "position_name", "commodity_amount", "maximal_number_of_locations"],
                     },
                 },
             },
@@ -959,80 +957,19 @@ class UEXcorpWingman(OpenAiWingman):
             {
                 "type": "function",
                 "function": {
-                    "name": "get_best_location_to_sell_to",
-                    "description": "Finds the best location at what the player can sell cargo at. Needs commodity name.",
+                    "name": "get_locations_to_buy_from",
+                    "description": "Finds the best locations at what the player can buy cargo at. Only give position_name if the player specifically wanted to filter for it. Needs commodity name.",
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "commodityName": {"type": "string"},
-                            "shipName": {"type": "string"},
-                            "positionName": {"type": "string"},
-                            "commodityAmount": {"type": "number"},
+                            "commodity_name": {"type": "string"},
+                            "ship_name": {"type": "string"},
+                            "position_name": {"type": "string"},
+                            "commodity_amount": {"type": "number"},
+                            "maximal_number_of_locations": {"type": "number"},
                         },
-                        "required": ["commodityName"],
-                        "optional": ["shipName", "positionName", "commodityAmount"],
-                    },
-                },
-            },
-        )
-        tools.append(
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_multiple_best_locations_to_sell_to",
-                    "description": "Finds the best locations at what the player can sell cargo at. If an alternative sell location is searched for, execute this function. Needs commodity name.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "commodityName": {"type": "string"},
-                            "shipName": {"type": "string"},
-                            "positionName": {"type": "string"},
-                            "commodityAmount": {"type": "number"},
-                            "maximalNumberOfLocations": {"type": "number"},
-                        },
-                        "required": ["commodityName"],
-                        "optional": ["shipName", "positionName", "commodityAmount", "maximalNumberOfLocations"],
-                    },
-                },
-            },
-        )
-        tools.append(
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_best_location_to_buy_from",
-                    "description": "Finds the best location at what the player can buy cargo at. Only give positionName if the player specifically wanted to filter for it. Needs commodity name.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "commodityName": {"type": "string"},
-                            "shipName": {"type": "string"},
-                            "positionName": {"type": "string"},
-                            "commodityAmount": {"type": "number"},
-                        },
-                        "required": ["commodityName"],
-                        "optional": ["shipName", "positionName", "commodityAmount"],
-                    },
-                },
-            },
-        )
-        tools.append(
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_multiple_best_locations_to_buy_from",
-                    "description": "Finds the best locations at what the player can buy cargo at. If an alternative buy location is searched for, execute this function. Only give positionName if the player specifically wanted to filter for it. Needs commodity name.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "commodityName": {"type": "string"},
-                            "shipName": {"type": "string"},
-                            "positionName": {"type": "string"},
-                            "commodityAmount": {"type": "number"},
-                            "maximalNumberOfLocations": {"type": "number"},
-                        },
-                        "required": ["commodityName"],
-                        "optional": ["shipName", "positionName", "commodityAmount", "maximalNumberOfLocations"],
+                        "required": ["commodity_name"],
+                        "optional": ["ship_name", "position_name", "commodity_amount", "maximal_number_of_locations"],
                     },
                 },
             },
@@ -1046,9 +983,9 @@ class UEXcorpWingman(OpenAiWingman):
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "locationName": {"type": "string"},
+                            "location_name": {"type": "string"},
                         },
-                        "required": ["locationName"],
+                        "required": ["location_name"],
                     },
                 },
             },
@@ -1062,9 +999,9 @@ class UEXcorpWingman(OpenAiWingman):
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "shipName": {"type": "string"},
+                            "ship_name": {"type": "string"},
                         },
-                        "required": ["shipName"],
+                        "required": ["ship_name"],
                     },
                 },
             },
@@ -1078,9 +1015,9 @@ class UEXcorpWingman(OpenAiWingman):
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "shipNames": {"type": "array", "items": {"type": "string"}},
+                            "ship_names": {"type": "array", "items": {"type": "string"}},
                         },
-                        "required": ["shipNames"],
+                        "required": ["ship_names"],
                     },
                 },
             },
@@ -1094,9 +1031,25 @@ class UEXcorpWingman(OpenAiWingman):
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "commodityName": {"type": "string"},
+                            "commodity_name": {"type": "string"},
                         },
-                        "required": ["commodityName"],
+                        "required": ["commodity_name"],
+                    },
+                },
+            },
+        )
+        tools.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_commodity_prices_and_tradeports",
+                    "description": "Gives information about the given commodity and its buy and sell offers. If a player asks for buy and sell information or locations on a commodity, this function needs to be executed.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "commodity_name": {"type": "string"},
+                        },
+                        "required": ["commodity_name"],
                     },
                 },
             },
@@ -1132,7 +1085,7 @@ class UEXcorpWingman(OpenAiWingman):
         )
         return tools
 
-    def _show_cached_function_values(self) -> str:
+    def _gpt_call_show_cached_function_values(self) -> str:
         """
         Prints the cached function's argument values to the console.
 
@@ -1144,7 +1097,7 @@ class UEXcorpWingman(OpenAiWingman):
             return "Please check the console for the cached function's argument values."
         return ""
 
-    def _reload_current_commodity_prices(self) -> str:
+    def _gpt_call_reload_current_commodity_prices(self) -> str:
         """
         Reloads the current commodity prices from UEX corp.
 
@@ -1159,34 +1112,34 @@ class UEXcorpWingman(OpenAiWingman):
         self._print_debug("Reloaded current commodity prices from UEX corp.", True)
         return "Reloaded current commodity prices from UEX corp."
 
-    def _get_commodity_information(self, commodityName: str = None) -> str:
+    def _gpt_call_get_commodity_information(self, commodity_name: str = None) -> str:
         """
         Retrieves information about a given commodity.
 
         Args:
-            commodityName (str, optional): The name of the commodity. Defaults to None.
+            commodity_name (str, optional): The name of the commodity. Defaults to None.
 
         Returns:
             str: The information about the commodity in JSON format, or an error message if the commodity is not found.
         """
-        self._print_debug(f"Parameters: Commodity: {commodityName}", True)
+        self._print_debug(f"Parameters: Commodity: {commodity_name}", True)
 
-        commodityName = self._get_function_arg_from_cache(
-            "commodityName", commodityName
+        commodity_name = self._get_function_arg_from_cache(
+            "commodity_name", commodity_name
         )
 
-        if commodityName is None:
+        if commodity_name is None:
             self._print_debug("No commodity given. Ask for a commodity.", True)
             return "No commodity given. Ask for a commodity."
 
         misunderstood = []
-        closest_match = self._find_closest_match(commodityName, self.commodity_names)
+        closest_match = self._find_closest_match(commodity_name, self.commodity_names)
         if closest_match is None:
-            misunderstood.append(f"Commodity: {commodityName}")
+            misunderstood.append(f"Commodity: {commodity_name}")
         else:
-            commodityName = closest_match
+            commodity_name = closest_match
 
-        self._print_debug(f"Interpreted Parameters: Commodity: {commodityName}", True)
+        self._print_debug(f"Interpreted Parameters: Commodity: {commodity_name}", True)
 
         if misunderstood:
             misunderstood_str = ", ".join(misunderstood)
@@ -1196,41 +1149,41 @@ class UEXcorpWingman(OpenAiWingman):
             )
             return f"These given parameters do not exist in game. Exactly ask for clarification of these values: {misunderstood_str}"
 
-        commodity = self._get_commodity_by_name(commodityName)
+        commodity = self._get_commodity_by_name(commodity_name)
         if commodity is not None:
             output_commodity = self._get_converted_commodity_for_output(commodity)
             self._print_debug(output_commodity, True)
             return json.dumps(output_commodity)
 
-    def _get_ship_information(self, shipName: str = None) -> str:
+    def _gpt_call_get_ship_information(self, ship_name: str = None) -> str:
         """
         Retrieves information about a specific ship.
 
         Args:
-            shipName (str, optional): The name of the ship. Defaults to None.
+            ship_name (str, optional): The name of the ship. Defaults to None.
 
         Returns:
             str: The ship information or an error message.
 
         """
-        self._print_debug(f"Parameters: Ship: {shipName}", True)
+        self._print_debug(f"Parameters: Ship: {ship_name}", True)
 
-        shipName = self._get_function_arg_from_cache(
-            "shipName", shipName
+        ship_name = self._get_function_arg_from_cache(
+            "ship_name", ship_name
         )
 
-        if shipName is None:
+        if ship_name is None:
             self._print_debug("No ship given. Ask for a ship. Dont say sorry.", True)
             return "No ship given. Ask for a ship. Dont say sorry."
 
         misunderstood = []
-        closest_match = self._find_closest_match(shipName, self.ship_names)
+        closest_match = self._find_closest_match(ship_name, self.ship_names)
         if closest_match is None:
-            misunderstood.append(f"Ship: {shipName}")
+            misunderstood.append(f"Ship: {ship_name}")
         else:
-            shipName = closest_match
+            ship_name = closest_match
 
-        self._print_debug(f"Interpreted Parameters: Ship: {shipName}", True)
+        self._print_debug(f"Interpreted Parameters: Ship: {ship_name}", True)
 
         if misunderstood:
             misunderstood_str = ", ".join(misunderstood)
@@ -1240,39 +1193,39 @@ class UEXcorpWingman(OpenAiWingman):
             )
             return f"These given parameters do not exist in game. Exactly ask for clarification of these values: {misunderstood_str}"
 
-        ship = self._get_ship_by_name(shipName)
+        ship = self._get_ship_by_name(ship_name)
         if ship is not None:
             output_ship = self._get_converted_ship_for_output(ship)
             self._print_debug(output_ship, True)
             return json.dumps(output_ship)
         
-    def _get_ship_comparison(self, shipNames: list[str] = None) -> str:
+    def _gpt_call_get_ship_comparison(self, ship_names: list[str] = None) -> str:
         """
         Retrieves information about multiple ships.
 
         Args:
-            shipNames (list[str], optional): The names of the ships. Defaults to None.
+            ship_names (list[str], optional): The names of the ships. Defaults to None.
 
         Returns:
             str: The ship information or an error message.
         """
-        self._print_debug(f"Parameters: Ships: {', '.join(shipNames)}", True)
+        self._print_debug(f"Parameters: Ships: {', '.join(ship_names)}", True)
 
-        if shipNames is None or not shipNames:
+        if ship_names is None or not ship_names:
             self._print_debug("No ship given. Ask for a ship. Dont say sorry.", True)
             return "No ship given. Ask for a ship. Dont say sorry."
 
         misunderstood = []
         ships = []
-        for shipname in shipNames:
-            closest_match = self._find_closest_match(shipname, self.ship_names)
+        for ship_name in ship_names:
+            closest_match = self._find_closest_match(ship_name, self.ship_names)
             if closest_match is None:
-                misunderstood.append(shipname)
+                misunderstood.append(ship_name)
             else:
-                shipname = closest_match
-                ships.append(self._get_ship_by_name(shipname))
+                ship_name = closest_match
+                ships.append(self._get_ship_by_name(ship_name))
 
-        self._print_debug(f"Interpreted Parameters: Ships: {', '.join(shipNames)}", True)
+        self._print_debug(f"Interpreted Parameters: Ships: {', '.join(ship_names)}", True)
 
         if misunderstood:
             self._print_debug(
@@ -1289,34 +1242,34 @@ class UEXcorpWingman(OpenAiWingman):
         self._print_debug(output, True)
         return output
 
-    def _get_location_information(self, locationName: str = None) -> str:
+    def _gpt_call_get_location_information(self, location_name: str = None) -> str:
         """
         Retrieves information about a given location.
 
         Args:
-            locationName (str, optional): The name of the location. Defaults to None.
+            location_name (str, optional): The name of the location. Defaults to None.
 
         Returns:
             str: The information about the location in JSON format, or an error message if the location is not found.
         """
-        self._print_debug(f"Parameters: Location: {locationName}", True)
+        self._print_debug(f"Parameters: Location: {location_name}", True)
 
-        locationName = self._get_function_arg_from_cache(
-            "locationName", locationName
+        location_name = self._get_function_arg_from_cache(
+            "location_name", location_name
         )
 
-        if locationName is None:
+        if location_name is None:
             self._print_debug("No location given. Ask for a location.", True)
             return "No location given. Ask for a location."
 
         misunderstood = []
-        closest_match = self._find_closest_match(locationName, self.location_names_set)
+        closest_match = self._find_closest_match(location_name, self.location_names_set)
         if closest_match is None:
-            misunderstood.append(f"Location: {locationName}")
+            misunderstood.append(f"Location: {location_name}")
         else:
-            locationName = closest_match
+            location_name = closest_match
 
-        self._print_debug(f"Interpreted Parameters: Location: {locationName}", True)
+        self._print_debug(f"Interpreted Parameters: Location: {location_name}", True)
 
         if misunderstood:
             misunderstood_str = ", ".join(misunderstood)
@@ -1327,27 +1280,27 @@ class UEXcorpWingman(OpenAiWingman):
             return f"These given parameters do not exist in game. Exactly ask for clarification of these values: {misunderstood_str}"
 
         # get a clone of the data
-        tradeport = self._get_tradeport_by_name(locationName)
+        tradeport = self._get_tradeport_by_name(location_name)
         if tradeport is not None:
             output = self._get_converted_tradeport_for_output(tradeport)
             self._print_debug(output, True)
             return json.dumps(output)
-        city = self._get_city_by_name(locationName)
+        city = self._get_city_by_name(location_name)
         if city is not None:
             output = self._get_converted_city_for_output(city)
             self._print_debug(output, True)
             return json.dumps(output)
-        satellite = self._get_satellite_by_name(locationName)
+        satellite = self._get_satellite_by_name(location_name)
         if satellite is not None:
             output = self._get_converted_satellite_for_output(satellite)
             self._print_debug(output, True)
             return json.dumps(output)
-        planet = self._get_planet_by_name(locationName)
+        planet = self._get_planet_by_name(location_name)
         if planet is not None:
             output = self._get_converted_planet_for_output(planet)
             self._print_debug(output, True)
             return json.dumps(output)
-        system = self._get_system_by_name(locationName)
+        system = self._get_system_by_name(location_name)
         if system is not None:
             output = self._get_converted_system_for_output(system)
             self._print_debug(output, True)
@@ -1427,7 +1380,7 @@ class UEXcorpWingman(OpenAiWingman):
         city["type"] = "City"
         city["system"] = self._get_system_name_by_code(city["system"])
         city["planet"] = self._get_planet_name_by_code(city["planet"])
-        tradeports = self._get_tradeports_by_positionname(city["name"], True)
+        tradeports = self._get_tradeports_by_position_name(city["name"], True)
 
         if tradeports:
             city["options_to_trade"] = ", ".join([self._format_tradeport_name(tradeport) for tradeport in tradeports])
@@ -1462,7 +1415,7 @@ class UEXcorpWingman(OpenAiWingman):
         satellite["type"] = "Satellite"
         satellite["system"] = self._get_system_name_by_code(satellite["system"])
         satellite["planet"] = self._get_planet_name_by_code(satellite["planet"])
-        tradeports = self._get_tradeports_by_positionname(satellite["name"], True)
+        tradeports = self._get_tradeports_by_position_name(satellite["name"], True)
 
         if tradeports:
             satellite["options_to_trade"] = ", ".join([self._format_tradeport_name(tradeport) for tradeport in tradeports])
@@ -1496,7 +1449,7 @@ class UEXcorpWingman(OpenAiWingman):
         ]
         planet["type"] = "Planet"
         planet["system"] = self._get_system_name_by_code(planet["system"])
-        tradeports = self._get_tradeports_by_positionname(planet["name"], True)
+        tradeports = self._get_tradeports_by_position_name(planet["name"], True)
 
         if tradeports:
             planet["options_to_trade"] = ", ".join([self._format_tradeport_name(tradeport) for tradeport in tradeports])
@@ -1538,7 +1491,7 @@ class UEXcorpWingman(OpenAiWingman):
             "date_modified",
         ]
         system["type"] = "System"
-        tradeports = self._get_tradeports_by_positionname(system["name"], True)
+        tradeports = self._get_tradeports_by_position_name(system["name"], True)
 
         if tradeports:
             system["options_to_trade"] = ", ".join([self._format_tradeport_name(tradeport) for tradeport in tradeports])
@@ -1679,6 +1632,7 @@ class UEXcorpWingman(OpenAiWingman):
             return self.cache["readable_objects"][checksum]
 
         commodity = copy.deepcopy(commodity)
+        commodity["notes"] = ""
         deletable_keys = [
             "code",
             "tradable",
@@ -1688,20 +1642,38 @@ class UEXcorpWingman(OpenAiWingman):
             "available",
             "date_added",
             "date_modified",
+            "trade_price_buy",
+            "trade_price_sell",
         ]
-        price_keys = ["trade_price_buy", "trade_price_sell"]
-        for key in price_keys:
-            if commodity[key] == 0:
-                commodity[key.replace("trade_price_", "")] = "No"
-                deletable_keys.append(key)
-            else:
-                commodity[key.replace("trade_price_", "")] = f"Yes ({int(commodity[key])} aUEC per SCU)"
+
+        price_buy_best = None
+        price_sell_best = None
+        commodity["buy_options"] = {}
+        commodity["sell_options"] = {}
+
+        for tradeport in self.tradeports:
+            if "prices" not in tradeport:
+                continue
+            if commodity["code"] in tradeport["prices"]:
+                if tradeport["prices"][commodity["code"]]["operation"] == "buy":
+                    price_buy = tradeport["prices"][commodity["code"]]["price_buy"]
+                    if price_buy_best is None or price_buy < price_buy_best:
+                        price_buy_best = price_buy
+                    commodity["buy_options"][self._format_tradeport_name(tradeport)] = f"{price_buy} aUEC"
+                else:
+                    price_sell = tradeport["prices"][commodity["code"]]["price_sell"]
+                    if price_sell_best is None or price_sell > price_sell_best:
+                        price_sell_best = price_sell
+                    commodity["sell_options"][self._format_tradeport_name(tradeport)] = f"{price_sell} aUEC"
+
+        commodity["best_buy_price"] = f"{price_buy_best} aUEC" if price_buy_best else "Not buyable."
+        commodity["best_sell_price"] = f"{price_sell_best} aUEC" if price_sell_best else "Not sellable."
 
         boolean_keys = ["minable", "harvestable", "illegal"]
         for key in boolean_keys:
             commodity[key] = "Yes" if commodity[key] != '0' else "No"
         if commodity["illegal"] == "Yes":
-            commodity["illegal"] += ", stay away from ship scanns to avoid fines and crimestat."
+            commodity["notes"] += "Stay away from ship scanns to avoid fines and crimestat, as this commodity is illegal."
 
         for key in deletable_keys:
             commodity.pop(key, None)
@@ -1709,31 +1681,31 @@ class UEXcorpWingman(OpenAiWingman):
         self.cache["readable_objects"][checksum] = commodity
         return commodity
 
-    def _get_multiple_best_locations_to_sell_to(
+    def _gpt_call_get_locations_to_sell_to(
         self,
-        commodityName: str = None,
-        shipName: str = None,
-        positionName: str = None,
-        commodityAmount: int = 1,
-        maximalNumberOfLocations: int = 3,
+        commodity_name: str = None,
+        ship_name: str = None,
+        position_name: str = None,
+        commodity_amount: int = 1,
+        maximal_number_of_locations: int = 5,
     ) -> str:
         self._print_debug(
-            f"Given Parameters: Commodity: {commodityName}, Ship Name: {shipName}, Current Position: {positionName}, Amount: {commodityAmount}, Maximal Number of Locations: {maximalNumberOfLocations}",
+            f"Given Parameters: Commodity: {commodity_name}, Ship Name: {ship_name}, Current Position: {position_name}, Amount: {commodity_amount}, Maximal Number of Locations: {maximal_number_of_locations}",
             True
         )
 
-        commodityName = self._get_function_arg_from_cache("commodityName", commodityName)
-        shipName = self._get_function_arg_from_cache("shipName", shipName)
+        commodity_name = self._get_function_arg_from_cache("commodity_name", commodity_name)
+        ship_name = self._get_function_arg_from_cache("ship_name", ship_name)
 
-        if commodityName is None:
+        if commodity_name is None:
             self._print_debug("No commodity given. Ask for a commodity.", True)
             return "No commodity given. Ask for a commodity."
 
         misunderstood = []
         parameters = {
-            "commodityName": (commodityName, self.commodity_names),
-            "shipName": (shipName, self.ship_names),
-            "positionName": (positionName, self.location_names_set),
+            "commodity_name": (commodity_name, self.commodity_names),
+            "ship_name": (ship_name, self.ship_names),
+            "position_name": (position_name, self.location_names_set),
         }
         for param, (value, names_set) in parameters.items():
             if value is not None:
@@ -1743,12 +1715,12 @@ class UEXcorpWingman(OpenAiWingman):
                 else:
                     self._set_function_arg_to_cache(param, match)
                     parameters[param] = (match, names_set)
-        commodityName = parameters["commodityName"][0]
-        shipName = parameters["shipName"][0]
-        positionName = parameters["positionName"][0]
+        commodity_name = parameters["commodity_name"][0]
+        ship_name = parameters["ship_name"][0]
+        position_name = parameters["position_name"][0]
 
         self._print_debug(
-            f"Interpreted Parameters: Commodity: {commodityName}, Ship Name: {shipName}, Position: {positionName}, Amount: {commodityAmount}, Maximal Number of Locations: {maximalNumberOfLocations}",
+            f"Interpreted Parameters: Commodity: {commodity_name}, Ship Name: {ship_name}, Position: {position_name}, Amount: {commodity_amount}, Maximal Number of Locations: {maximal_number_of_locations}",
             True
         )
 
@@ -1762,11 +1734,11 @@ class UEXcorpWingman(OpenAiWingman):
                 misunderstood
             )
 
-        tradeports = self.tradeports if positionName is None else self._get_tradeports_by_positionname(positionName)
-        commodity = self._get_commodity_by_name(commodityName)
-        ship = self._get_ship_by_name(shipName)
-        amount = max(1, int(commodityAmount or 1))
-        maximal_number_of_locations = max(1, int(maximalNumberOfLocations))
+        tradeports = self.tradeports if position_name is None else self._get_tradeports_by_position_name(position_name)
+        commodity = self._get_commodity_by_name(commodity_name)
+        ship = self._get_ship_by_name(ship_name)
+        amount = max(1, int(commodity_amount or 1))
+        maximal_number_of_locations = max(1, int(maximal_number_of_locations or 3))
 
         selloptions = collections.defaultdict(list)
         for tradeport in tradeports:
@@ -1777,7 +1749,7 @@ class UEXcorpWingman(OpenAiWingman):
         selloptions = dict(sorted(selloptions.items(), reverse=True))
         selloptions = dict(itertools.islice(selloptions.items(), maximal_number_of_locations))
 
-        messages = [f"Here are the best {len(selloptions)} locations to sell {amount} SCU {commodityName}:"]
+        messages = [f"Here are the best {len(selloptions)} locations to sell {amount} SCU {commodity_name}:"]
 
         for sellprice, tradeports in selloptions.items():
             messages.append(f"{sellprice} aUEC:")
@@ -1786,31 +1758,31 @@ class UEXcorpWingman(OpenAiWingman):
         self._print_debug("\n".join(messages), True)
         return "\n".join(messages)
 
-    def _get_multiple_best_locations_to_buy_from(
+    def _gpt_call_get_locations_to_buy_from(
         self,
-        commodityName: str = None,
-        shipName: str = None,
-        positionName: str = None,
-        commodityAmount: int = 1,
-        maximalNumberOfLocations: int = 3,
+        commodity_name: str = None,
+        ship_name: str = None,
+        position_name: str = None,
+        commodity_amount: int = 1,
+        maximal_number_of_locations: int = 5,
     ) -> str:
         self._print_debug(
-            f"Given Parameters: Commodity: {commodityName}, Ship Name: {shipName}, Current Position: {positionName}, Amount: {commodityAmount}, Maximal Number of Locations: {maximalNumberOfLocations}",
+            f"Given Parameters: Commodity: {commodity_name}, Ship Name: {ship_name}, Current Position: {position_name}, Amount: {commodity_amount}, Maximal Number of Locations: {maximal_number_of_locations}",
             True
         )
 
-        commodityName = self._get_function_arg_from_cache("commodityName", commodityName)
-        shipName = self._get_function_arg_from_cache("shipName", shipName)
+        commodity_name = self._get_function_arg_from_cache("commodity_name", commodity_name)
+        ship_name = self._get_function_arg_from_cache("ship_name", ship_name)
 
-        if commodityName is None:
+        if commodity_name is None:
             self._print_debug("No commodity given. Ask for a commodity.", True)
             return "No commodity given. Ask for a commodity."
 
         misunderstood = []
         parameters = {
-            "shipName": (shipName, self.ship_names),
-            "locationName": (positionName, self.location_names_set),
-            "commodityName": (commodityName, self.commodity_names),
+            "ship_name": (ship_name, self.ship_names),
+            "location_name": (position_name, self.location_names_set),
+            "commodity_name": (commodity_name, self.commodity_names),
         }
         for param, (value, names_set) in parameters.items():
             if value is not None:
@@ -1820,12 +1792,12 @@ class UEXcorpWingman(OpenAiWingman):
                 else:
                     self._set_function_arg_to_cache(param, match)
                     parameters[param] = (match, names_set)
-        shipName = parameters["shipName"][0]
-        positionName = parameters["locationName"][0]
-        commodityName = parameters["commodityName"][0]
+        ship_name = parameters["ship_name"][0]
+        position_name = parameters["location_name"][0]
+        commodity_name = parameters["commodity_name"][0]
 
         self._print_debug(
-            f"Interpreted Parameters: Commodity: {commodityName}, Ship Name: {shipName}, Position: {positionName}, Amount: {commodityAmount}, Maximal Number of Locations: {maximalNumberOfLocations}",
+            f"Interpreted Parameters: Commodity: {commodity_name}, Ship Name: {ship_name}, Position: {position_name}, Amount: {commodity_amount}, Maximal Number of Locations: {maximal_number_of_locations}",
             True
         )
 
@@ -1839,11 +1811,11 @@ class UEXcorpWingman(OpenAiWingman):
                 misunderstood
             )
 
-        tradeports = self.tradeports if positionName is None else self._get_tradeports_by_positionname(positionName)
-        commodity = self._get_commodity_by_name(commodityName)
-        ship = self._get_ship_by_name(shipName)
-        amount = max(1, int(commodityAmount or 1))
-        maximal_number_of_locations = max(1, int(maximalNumberOfLocations or 3))
+        tradeports = self.tradeports if position_name is None else self._get_tradeports_by_position_name(position_name)
+        commodity = self._get_commodity_by_name(commodity_name)
+        ship = self._get_ship_by_name(ship_name)
+        amount = max(1, int(commodity_amount or 1))
+        maximal_number_of_locations = max(1, int(maximal_number_of_locations or 3))
 
         buyoptions = collections.defaultdict(list)
         for tradeport in tradeports:
@@ -1854,7 +1826,7 @@ class UEXcorpWingman(OpenAiWingman):
         buyoptions = dict(sorted(buyoptions.items(), reverse=False))
         buyoptions = dict(itertools.islice(buyoptions.items(), maximal_number_of_locations))
 
-        messages = [f"Here are the best {len(buyoptions)} locations to buy {amount} SCU {commodityName}:"]
+        messages = [f"Here are the best {len(buyoptions)} locations to buy {amount} SCU {commodity_name}:"]
         for buyprice, tradeports in buyoptions.items():
             messages.append(f"{buyprice} aUEC:")
             messages.extend(self._get_tradeport_route_description(tradeport) for tradeport in tradeports)
@@ -1888,112 +1860,68 @@ class UEXcorpWingman(OpenAiWingman):
                 return price["price_buy"] * amount
         return None
 
-    def _get_best_location_to_sell_to(
+    def _gpt_call_get_trading_routes(
         self,
-        commodityName: str = None,
-        shipName: str = None,
-        positionName: str = None,
-        commodityAmount: float = 1,
-    ) -> str:
-        """
-        Finds the best selling location for a given commodity and position.
-
-        Args:
-            commodityName (str, optional): The name of the commodity. Defaults to None.
-            shipName (str, optional): The name of the ship. Defaults to None.
-            positionName (str, optional): The name of the current position. Defaults to None.
-            commodityAmount (float, optional): The amount of the commodity. Defaults to 1.
-
-        Returns:
-            str: A string containing information about the best selling location(s) and sell prices.
-        """
-        self._print_debug(
-            f"Given Parameters: Commodity: {commodityName}, Ship Name: {shipName}, Current Position: {positionName}, Amount: {commodityAmount}",
-            True
-        )
-        return self._get_multiple_best_locations_to_sell_to(commodityName, shipName, positionName, commodityAmount, 1)
-
-    def _get_best_location_to_buy_from(
-        self,
-        commodityName: str = None,
-        shipName: str = None,
-        positionName: str = None,
-        commodityAmount: float = 1,
-    ) -> str:
-        """
-        Finds the best selling location for a given commodity and position.
-
-        Args:
-            commodityName (str, optional): The name of the commodity. Defaults to None.
-            shipName (str, optional): The name of the ship. Defaults to None.
-            positionName (str, optional): The name of the current position. Defaults to None.
-            commodityAmount (float, optional): The amount of the commodity. Defaults to 1.
-
-        Returns:
-            str: A string containing information about the best selling location(s) and sell prices.
-        """
-        self._print_debug(
-            f"Given Parameters: Commodity: {commodityName}, Ship Name: {shipName}, Current Position: {positionName}, Amount: {commodityAmount}",
-            True
-        )
-        return self._get_multiple_best_locations_to_buy_from(commodityName, shipName, positionName, commodityAmount, 1)
-
-    def _get_multiple_best_trading_routes(
-        self,
-        shipName: str = None,
-        moneyToSpend: float = None,
-        positionStartName: str = None,
-        freeCargoSpace: float = None,
-        positionEndName: str = None,
-        commodityName: str = None,
-        illegalCommoditesAllowed: bool = None,
-        maximalNumberOfRoutes: int = 2,
+        ship_name: str = None,
+        money_to_spend: float = None,
+        position_start_name: str = None,
+        free_cargo_space: float = None,
+        position_end_name: str = None,
+        commodity_name: str = None,
+        illegal_commodites_allowed: bool = None,
+        maximal_number_of_routes: int = 3,
     ) -> str:
         """
         Finds multiple best trading routes based on the given parameters.
 
         Args:
-            shipName (str, optional): The name of the ship. Defaults to None.
-            moneyToSpend (float, optional): The amount of money to spend. Defaults to None.
-            positionStartName (str, optional): The name of the starting position. Defaults to None.
-            freeCargoSpace (float, optional): The amount of free cargo space. Defaults to None.
-            positionEndName (str, optional): The name of the ending position. Defaults to None.
-            commodityName (str, optional): The name of the commodity. Defaults to None.
-            illegalCommoditesAllowed (bool, optional): Flag indicating whether illegal commodities are allowed. Defaults to True.
-            maximalNumberOfRoutes (int, optional): The maximum number of routes to return. Defaults to 2.
+            ship_name (str, optional): The name of the ship. Defaults to None.
+            money_to_spend (float, optional): The amount of money to spend. Defaults to None.
+            position_start_name (str, optional): The name of the starting position. Defaults to None.
+            free_cargo_space (float, optional): The amount of free cargo space. Defaults to None.
+            position_end_name (str, optional): The name of the ending position. Defaults to None.
+            commodity_name (str, optional): The name of the commodity. Defaults to None.
+            illegal_commodites_allowed (bool, optional): Flag indicating whether illegal commodities are allowed. Defaults to True.
+            maximal_number_of_routes (int, optional): The maximum number of routes to return. Defaults to 2.
 
         Returns:
             str: A string representation of the trading routes found.
         """
+
+        # For later use in distance calculation:
+        # https://starmap.tk/api/v2/oc/
+        # https://starmap.tk/api/v2/pois/
+
         self._print_debug(
-            f"Parameters: Ship: {shipName}, Position Start: {positionStartName}, Position End: {positionEndName}, Commodity Name: {commodityName}, Money: {moneyToSpend} aUEC, FreeCargoSpace: {freeCargoSpace} SCU, Maximal Number of Routes: {maximalNumberOfRoutes}, Illegal Allowed: {illegalCommoditesAllowed}",
+            f"Parameters: Ship: {ship_name}, Position Start: {position_start_name}, Position End: {position_end_name}, Commodity Name: {commodity_name}, Money: {money_to_spend} aUEC, free_cargo_space: {free_cargo_space} SCU, Maximal Number of Routes: {maximal_number_of_routes}, Illegal Allowed: {illegal_commodites_allowed}",
             True
         )
 
-        shipName = self._get_function_arg_from_cache("shipName", shipName)
-        illegalCommoditesAllowed = self._get_function_arg_from_cache("illegalCommoditesAllowed", illegalCommoditesAllowed) or True
-        self._set_function_arg_to_cache("illegalCommoditesAllowed", illegalCommoditesAllowed)
+        ship_name = self._get_function_arg_from_cache("ship_name", ship_name)
+        illegal_commodites_allowed = self._get_function_arg_from_cache("illegal_commodites_allowed", illegal_commodites_allowed)
+        if illegal_commodites_allowed is None:
+            illegal_commodites_allowed = True
 
-        if shipName is None:
+        if ship_name is None:
             self._print_debug("No ship given. Ask for a ship and make sure a start location is given. Everything else is optional.  Dont say sorry.", True)
             return "No ship given. Ask for a ship and make sure a start location is given. Everything else is optional.  Dont say sorry."
 
-        if positionStartName is None:
+        if position_start_name is None:
             self._print_debug(
                 "No start position given. Ask for a start position. (Station, Planet, Satellite, City or System), as the ship information is given, thats all we need.",
                 True
             )
             return "No start position given. Ask for a start position. (Station, Planet, Satellite, City or System), as the ship information is given, thats all we need."
 
-        moneyToSpend = None if moneyToSpend is not None and int(moneyToSpend) < 1 else moneyToSpend
-        freeCargoSpace = None if freeCargoSpace is not None and int(freeCargoSpace) < 1 else freeCargoSpace
+        money_to_spend = None if money_to_spend is not None and int(money_to_spend) < 1 else money_to_spend
+        free_cargo_space = None if free_cargo_space is not None and int(free_cargo_space) < 1 else free_cargo_space
 
         misunderstood = []
         parameters = {
-            "shipName": (shipName, self.ship_names),
-            "positionStartName": (positionStartName, self.location_names_set),
-            "positionEndName": (positionEndName, self.location_names_set),
-            "commodityName": (commodityName, self.commodity_names),
+            "ship_name": (ship_name, self.ship_names),
+            "position_start_name": (position_start_name, self.location_names_set),
+            "position_end_name": (position_end_name, self.location_names_set),
+            "commodity_name": (commodity_name, self.commodity_names),
         }
         for param, (value, names_set) in parameters.items():
             if value is not None:
@@ -2003,20 +1931,20 @@ class UEXcorpWingman(OpenAiWingman):
                 else:
                     self._set_function_arg_to_cache(param, match)
                     parameters[param] = (match, names_set)
-        shipName = parameters["shipName"][0]
-        positionStartName = parameters["positionStartName"][0]
-        positionEndName = parameters["positionEndName"][0]
-        commodityName = parameters["commodityName"][0]
+        ship_name = parameters["ship_name"][0]
+        position_start_name = parameters["position_start_name"][0]
+        position_end_name = parameters["position_end_name"][0]
+        commodity_name = parameters["commodity_name"][0]
 
-        if moneyToSpend is not None:
-            self._set_function_arg_to_cache("money", moneyToSpend)
+        if money_to_spend is not None:
+            self._set_function_arg_to_cache("money", money_to_spend)
 
         self._print_debug(
-            f"Interpreted Parameters: Ship: {shipName}, Position Start: {positionStartName}, Position End: {positionEndName}, Commodity Name: {commodityName}, Money: {moneyToSpend} aUEC, FreeCargoSpace: {freeCargoSpace} SCU, Maximal Number of Routes: {maximalNumberOfRoutes}, Illegal Allowed: {illegalCommoditesAllowed}",
+            f"Interpreted Parameters: Ship: {ship_name}, Position Start: {position_start_name}, Position End: {position_end_name}, Commodity Name: {commodity_name}, Money: {money_to_spend} aUEC, free_cargo_space: {free_cargo_space} SCU, Maximal Number of Routes: {maximal_number_of_routes}, Illegal Allowed: {illegal_commodites_allowed}",
             True
         )
 
-        self._set_function_arg_to_cache("money", moneyToSpend)
+        self._set_function_arg_to_cache("money", money_to_spend)
 
         if misunderstood:
             misunderstood_str = ", ".join(misunderstood)
@@ -2026,227 +1954,189 @@ class UEXcorpWingman(OpenAiWingman):
             )
             return f"These given parameters do not exist in game. Exactly ask for clarification of these values: {misunderstood_str}"
 
-        trading_routes = []
-        self.cache_enabled = False
-        if commodityName is None:
-            for commodity in self.commodity_names:
-                trading_route_new = self._get_best_trading_route(
-                    shipName,
-                    moneyToSpend,
-                    positionStartName,
-                    freeCargoSpace,
-                    positionEndName,
-                    commodity,
-                    illegalCommoditesAllowed,
-                )
-                self._print_debug(trading_route_new, True)
-                if trading_route_new.startswith("{"):
-                    trading_route_new = json.loads(trading_route_new)
-                    trading_routes.append(trading_route_new)
+        # set variables
+        ship = self._get_ship_by_name(ship_name)
+        if money_to_spend is not None:
+            money = int(money_to_spend)
         else:
-            commodity = self._get_commodity_by_name(commodityName)
-            start_tradeports = self._get_tradeports_by_positionname(positionStartName) if positionStartName else self.tradeports
-            end_tradeports = self._get_tradeports_by_positionname(positionEndName) if positionEndName else self.tradeports
+            money = None
+        if free_cargo_space is not None:
+            free_cargo_space = int(free_cargo_space)
+        else:
+            free_cargo_space = None
+        position_start = self._get_tradeport_by_name(position_start_name)
+        position_end = self._get_tradeport_by_name(position_end_name) if position_end_name else None
+        commodity = self._get_commodity_by_name(commodity_name) if commodity_name else None
+        maximal_number_of_routes = int(maximal_number_of_routes or 2)
 
-            start_tradeports = [tp for tp in start_tradeports if "prices" in tp and commodity["code"] in tp["prices"] and tp["prices"][commodity["code"]]["operation"] == "buy"]
-            end_tradeports = [tp for tp in end_tradeports if "prices" in tp and commodity["code"] in tp["prices"] and tp["prices"][commodity["code"]]["operation"] == "sell"]
 
+        start_tradeports = self._get_tradeports_by_position_name(position_start["name"]) if position_start else self.tradeports
+        end_tradeports = self._get_tradeports_by_position_name(position_end["name"]) if position_end else self.tradeports
+        commodities = []
+        if commodity is None:
+            commodities = self.commodities
+        else:
+            commodities.append(commodity)
+
+        trading_routes = []
+        errors = []
+        for commodity in commodities:
+            commodity_routes = []
+            if not illegal_commodites_allowed and commodity["illegal"] == "Yes":
+                continue
             for start_tradeport in start_tradeports:
+                if "prices" not in start_tradeport or commodity["code"] not in start_tradeport["prices"] or start_tradeport["prices"][commodity["code"]]["operation"] != "buy":
+                    continue
                 for end_tradeport in end_tradeports:
-                    trading_route_new = self._get_best_trading_route(
-                        shipName,
-                        moneyToSpend,
-                        self._format_tradeport_name(start_tradeport),
-                        freeCargoSpace,
-                        self._format_tradeport_name(end_tradeport),
-                        commodityName,
-                        illegalCommoditesAllowed,
+                    if "prices" not in end_tradeport or commodity["code"] not in end_tradeport["prices"] or end_tradeport["prices"][commodity["code"]]["operation"] != "sell":
+                        continue
+                    trading_route_new = self._get_trading_route(
+                        ship,
+                        start_tradeport,
+                        money,
+                        free_cargo_space,
+                        end_tradeport,
+                        commodity,
+                        illegal_commodites_allowed,
                     )
-                    self._print_debug(trading_route_new, True)
-                    if trading_route_new.startswith("{"):
-                        trading_route_new = json.loads(trading_route_new)
-                        trading_routes.append(trading_route_new)
-        self.cache_enabled = True
+                    # self._print_debug(trading_route_new, True)
+                    if isinstance(trading_route_new, str):
+                        if trading_route_new not in errors:
+                            errors.append(trading_route_new)
+                    else:
+                        commodity_routes.append(trading_route_new)
+            if len(commodity_routes) > 0:
+                if self.uexcorp_summarize_routes_by_commodity:
+                    best_commodity_route = {}
+                    for commodity_route in commodity_routes:
+                        if not best_commodity_route:
+                            best_commodity_route = commodity_route
+                        elif commodity_route["profit"] > best_commodity_route["profit"]:
+                            best_commodity_route = commodity_route
+                    trading_routes.append(best_commodity_route)
+                else:
+                    trading_routes.extend(commodity_routes)
 
-        # get the top maximalNumberOfRoutes trading routes by profit
-        trading_routes = heapq.nlargest(maximalNumberOfRoutes, trading_routes, key=lambda k: int(k["profit"].split(" ")[0]))
-
-        if trading_routes:
-            if len(trading_routes) == maximalNumberOfRoutes:
-                additional_answer = " Tell the player their might be more routes with lower profit, but they are not shown to keep it short. "
+        if len(trading_routes) > 0:
+            additional_answer = ""
+            if len(trading_routes) < maximal_number_of_routes:
+                additional_answer += f" There are only {len(trading_routes)} with different commodities available. "
             else:
-                additional_answer = f" Tell the player there are only {len(trading_routes)} with different commodities available. "
+                additional_answer += f" There are {len(trading_routes)} routes available and these are the best {maximal_number_of_routes} ones."
+
+            # sort trading routes by profit and limit to maximal_number_of_routes
+            trading_routes = heapq.nlargest(maximal_number_of_routes, trading_routes, key=lambda k: int(k["profit"]))
+
+            for trading_route in trading_routes:
+                destinationselection = []
+                for tradeport in trading_route["end"]:
+                    destinationselection.append(
+                        f"{self._get_tradeport_route_description(tradeport)}"
+                    )
+                trading_route["end"] = " OR ".join(destinationselection)
+                startselection = []
+                for tradeport in trading_route["start"]:
+                    startselection.append(
+                        f"{self._get_tradeport_route_description(tradeport)}"
+                    )
+                trading_route["start"] = " OR ".join(startselection)
+
+            # format the trading routes
+            for trading_route in trading_routes:
+                trading_route["start"] = trading_route["start"]
+                trading_route["end"] = trading_route["end"]
+                trading_route["commodity"] = self._format_commodity_name(trading_route["commodity"])
+                trading_route["profit"] = f"{trading_route['profit']} aUEC"
+                trading_route["buy"] = f"{trading_route['buy']} aUEC"
+                trading_route["sell"] = f"{trading_route['sell']} aUEC"
+                trading_route["cargo"] = f"{trading_route['cargo']} SCU"
 
             message = (
-                "List possible commodities with just their profit and only give further information on request (e.g. 86 SCU Astatine for a profit of 45.567 aUEC)."
+                "Possible commodities with their profit. Just give basic overview at first."
                 + additional_answer
-                + "JSON: "
+                + " JSON: "
                 + json.dumps(trading_routes)
             )
 
             self._print_debug(message, True)
             return message
         else:
-            self._print_debug("No trading routes found.", True)
-            return "No trading routes found."
+            return_string = "No trading routes found."
+            if len(errors) > 0:
+                return_string += "\nPossible errors are:\n- " + "\n- ".join(errors)
+            self._print_debug(return_string, True)
+            return return_string
 
-    def _get_best_trading_route(
+    def _get_trading_route(
         self,
-        shipName: str = None,
-        moneyToSpend: float = None,
-        positionStartName: str = None,
-        freeCargoSpace: float = None,
-        positionEndName: str = None,
-        commodityName: str = None,
-        illegalCommoditesAllowed: bool = None,
+        ship: dict[str, any],
+        position_start: dict[str, any],
+        money: int = None,
+        free_cargo_space: int = None,
+        position_end: dict[str, any] = None,
+        commodity: dict[str, any] = None,
+        illegal_commodites_allowed: bool = True,
     ) -> str:
         """
         Finds the best trading route based on the given parameters.
 
         Args:
-            shipName (str, optional): The name of the ship. Defaults to None.
-            moneyToSpend (float, optional): The amount of money to spend. Defaults to None.
-            positionStartName (str, optional): The name of the starting position. Defaults to None.
-            freeCargoSpace (float, optional): The amount of free cargo space. Defaults to None.
-            positionEndName (str, optional): The name of the ending position. Defaults to None.
-            commodityName (str, optional): The name of the commodity. Defaults to None.
-            illegalCommoditesAllowed (bool, optional): Whether illegal commodities are allowed. Defaults to True.
+            ship (dict[str, any]): The ship dictionary.
+            position_start (dict[str, any]): The starting position dictionary.
+            money (int, optional): The amount of money to spend. Defaults to None.
+            free_cargo_space (int, optional): The amount of free cargo space. Defaults to None.
+            position_end (dict[str, any], optional): The ending position dictionary. Defaults to None.
+            commodity (dict[str, any], optional): The commodity dictionary. Defaults to None.
+            illegal_commodites_allowed (bool, optional): Flag indicating whether illegal commodities are allowed. Defaults to True.
 
         Returns:
-            str: A JSON string representing the best trading route.
-
-        Raises:
-            None
-
+            str: A string representation of the trading route found. JSON if the route is found, otherwise an error message.
         """
-        self._print_debug(
-            f"Parameters: Ship: {shipName}, Position Start: {positionStartName}, Position End: {positionEndName},  Money: {moneyToSpend} aUEC, FreeCargoSpace: {freeCargoSpace} SCU, Commodity: {commodityName}, Illegal Allowed: {illegalCommoditesAllowed}",
-            True
-        )
-
-        shipName = self._get_function_arg_from_cache("shipName", shipName)
-        # positionStartName = self._get_function_arg_from_cache("locationName", positionStartName) # not working so well as this is will change frequently
-        illegalCommoditesAllowed = self._get_function_arg_from_cache("illegalCommoditesAllowed", illegalCommoditesAllowed)
-        if illegalCommoditesAllowed is None:
-            illegalCommoditesAllowed = True
-        else :
-            self._set_function_arg_to_cache("illegalCommoditesAllowed", illegalCommoditesAllowed)
-
-        if shipName is None:
-            self._print_debug("No ship given. Ask for a ship and make sure a start location is given. Everything else is optional. Dont say sorry.", True)
-            return "No ship given. Ask for a ship and make sure a start location is given. Everything else is optional."
         
-        if positionStartName is None:
-            self._print_debug(
-                "No start position given. Ask for a start position. (Station, Planet, Satellite, City or System), as the ship information is given, thats all we need.",
-                True
-            )
-            return "No start position given. Ask for a start position. (Station, Planet, Satellite, City or System), as the ship information is given, thats all we need."
-
-        if moneyToSpend is not None and int(moneyToSpend) < 1:
-            moneyToSpend = None
-        if freeCargoSpace is not None and int(freeCargoSpace) < 1:
-            freeCargoSpace = None
-
-        misunderstood = []
-        parameters = {
-            "shipName": (shipName, self.ship_names),
-            "locationName": (positionStartName, self.location_names_set),
-            "locationNameTarget": (positionEndName, self.location_names_set),
-            "commodityName": (commodityName, self.commodity_names),
-        }
-        for param, (value, names_set) in parameters.items():
-            if value is not None:
-                match = self._find_closest_match(value, names_set)
-                if match is None:
-                    misunderstood.append(f"{param}: {value}")
-                else:
-                    self._set_function_arg_to_cache(param, match)
-                    parameters[param] = (match, names_set)
-        shipName = parameters["shipName"][0]
-        positionStartName = parameters["locationName"][0]
-        positionEndName = parameters["locationNameTarget"][0]
-        commodityName = parameters["commodityName"][0]
-
-        self._set_function_arg_to_cache("money", moneyToSpend)
-
-        self._print_debug(
-            f"Interpreted Parameters: Ship: {shipName}, Position Start: {positionStartName}, Position End: {positionEndName},  Money: {moneyToSpend} aUEC, FreeCargoSpace: {freeCargoSpace} SCU, Commodity: {commodityName}, Illegal Allowed: {illegalCommoditesAllowed}",
-            True
-        )
-
-        if misunderstood:
-            message = "These given parameters do not exist in game. Exactly ask for clarification of these values: " + ", ".join(misunderstood)
-            self._print_debug(message, True)
-            return message
-
-        ship = self._get_ship_by_name(shipName)
+        # set variables
         cargo_space = ship["scu"]
-        if freeCargoSpace:
-            cargo_space = freeCargoSpace
-            if freeCargoSpace > ship["scu"]:
+        if free_cargo_space:
+            cargo_space = free_cargo_space
+            if free_cargo_space > ship["scu"]:
                 cargo_space = ship["scu"]
 
-        if moneyToSpend is None:
-            money = None
-        else:
-            money = int(moneyToSpend)
+        if cargo_space < 1:
+            return "Your ship has no cargo space to trade."
 
-        commodity_filter = self._get_commodity_by_name(commodityName)
-
-        start_tradeports = self._get_tradeports_by_positionname(positionStartName)
+        commodity_filter = commodity
+        start_tradeports = self._get_tradeports_by_position_name(position_start['name'])
         if ship["hull_trading"] is True:
             start_tradeports = [
                 tradeport
                 for tradeport in start_tradeports
-                if tradeport["hull_trading"] is True
+                if "hull_trading" in tradeport and tradeport["hull_trading"] is True
             ]
         if len(start_tradeports) < 1:
             if ship["hull_trading"] is True:
-                self._print_debug(
-                    "No valid start position given. Make sure to provide a start point compatible with your ship.",
-                    True
-                )
                 return "No valid start position given. Make sure to provide a start point compatible with your ship."
-            self._print_debug(
-                "No valid start position given. Try a different position or just name a planet or star system.",
-                True
-            )
             return "No valid start position given. Try a different position or just name a planet or star system."
 
-        if positionEndName is None:
-            end_tradeports = self.tradeports
-        else:
-            end_tradeports = self._get_tradeports_by_positionname(positionEndName)
-
-        if len(end_tradeports) < 1 and positionEndName is not None:
-            self._print_debug("No valid end position given.", True)
-            return "No valid end position given."
-
-        if len(end_tradeports) < 1:
+        end_tradeports = []
+        if position_end is None:
             for tradeport in self.tradeports:
                 if tradeport["system"] == start_tradeports[0]["system"]:
-                    end_tradeports.append(tradeport)
-
-        if positionEndName and len(end_tradeports) == 1 and len(start_tradeports) == 1:
-            if end_tradeports[0]["code"] == start_tradeports[0]["code"]:
-                self._print_debug("Start and end position are the same.", True)
-                return "Start and end position are the same."
-
+                        end_tradeports.append(tradeport)
+        else:
+            end_tradeports = self._get_tradeports_by_position_name(position_end["name"])
         if ship["hull_trading"] is True:
             end_tradeports = [
                 tradeport
-                for tradeport in end_tradeports
+                for tradeport in start_tradeports
                 if "hull_trading" in tradeport and tradeport["hull_trading"] is True
             ]
+        if len(end_tradeports) < 1:
+            return "No valid end position given."
 
-        if ship is None:
-            self._print_debug("Invalid ship given.", True)
-            return "Invalid ship given."
+        if len(end_tradeports) == 1 and len(start_tradeports) == 1 and end_tradeports[0]["code"] == start_tradeports[0]["code"]:
+            return "Start and end position are the same."
 
-        if cargo_space <= 0 or (money is not None and money <= 0):
-            self._print_debug("You dont have enough cargo space or money to trade.", True)
-            return "You dont have enough cargo space or money to trade."
+        if money is not None and money <= 0:
+            return "You dont have enough money to trade."
 
         best_route = {
             "start": [],
@@ -2267,7 +2157,7 @@ class UEXcorpWingman(OpenAiWingman):
                 if price["operation"] == "buy" and (
                     commodity_filter is None or commodity_filter["code"] == attr
                 ):
-                    if illegalCommoditesAllowed is True or price["kind"] != "Drug":
+                    if illegal_commodites_allowed is True or price["kind"] != "Drug":
                         price["short_name"] = attr
                         commodities.append(price)
 
@@ -2315,33 +2205,15 @@ class UEXcorpWingman(OpenAiWingman):
                                             best_route["end"].append(tradeport_end)
 
         if len(best_route["start"]) == 0:
-            self._print_debug(
-                f"No route found for your {shipName} starting from {positionStartName}. Try a different route.",
-                True
-            )
-            return f"No route found for your {shipName} starting from {positionStartName}. Try a different route."
+            return f"No route found for your {ship['name']}. Try a different route."
 
-        destinationselection = []
-        for tradeport in best_route["end"]:
-            destinationselection.append(
-                f"({self._get_tradeport_route_description(tradeport)})"
-            )
-        best_route["end"] = " OR ".join(destinationselection)
-        startselection = []
-        for tradeport in best_route["start"]:
-            startselection.append(
-                f"({self._get_tradeport_route_description(tradeport)})"
-            )
-        best_route["start"] = " OR ".join(startselection)
+        best_route["commodity"] = best_route['commodity']
+        best_route["profit"] = f"{best_route['profit']}"
+        best_route["cargo"] = f"{best_route['cargo']}"
+        best_route["buy"] = f"{best_route['buy']}"
+        best_route["sell"] = f"{best_route['sell']}"
 
-        best_route["commodity"] = f"{best_route['commodity']['name']}"
-        best_route["profit"] = f"{best_route['profit']} aUEC"
-        best_route["cargo"] = f"{best_route['cargo']} SCU"
-        best_route["buy"] = f"{best_route['buy']} aUEC"
-        best_route["sell"] = f"{best_route['sell']} aUEC"
-
-        self._print_debug(best_route, True)
-        return json.dumps(best_route)
+        return best_route
 
     def _get_ship_by_name(self, name: str) -> Optional[object]:
         """Finds the ship with the specified name and returns the ship or None.
@@ -2454,7 +2326,7 @@ class UEXcorpWingman(OpenAiWingman):
         Returns:
             str: The name of the system with the specified code.
         """
-        return self.system_code_dict.get(code.lower()) if code else None
+        return self._format_system_name(self.system_code_dict.get(code.lower())) if code else None
 
     def _get_planet_name_by_code(self, code: str) -> str:
         """Returns the name of the planet with the specified code.
@@ -2465,7 +2337,7 @@ class UEXcorpWingman(OpenAiWingman):
         Returns:
             str: The name of the planet with the specified code.
         """
-        return self.planet_code_dict.get(code.lower()) if code else None
+        return self._format_planet_name(self.planet_code_dict.get(code.lower())) if code else None
 
     def _get_satellite_name_by_code(self, code: str) -> str:
         """Returns the name of the satellite with the specified code.
@@ -2476,7 +2348,7 @@ class UEXcorpWingman(OpenAiWingman):
         Returns:
             str: The name of the satellite with the specified code.
         """
-        return self.satellite_code_dict.get(code.lower()) if code else None
+        return self._format_satellite_name(self.satellite_code_dict.get(code.lower())) if code else None
 
     def _get_city_name_by_code(self, code: str) -> str:
         """Returns the name of the city with the specified code.
@@ -2487,7 +2359,7 @@ class UEXcorpWingman(OpenAiWingman):
         Returns:
             str: The name of the city with the specified code.
         """
-        return self.city_code_dict.get(code.lower()) if code else None
+        return self._format_city_name(self.city_code_dict.get(code.lower())) if code else None
 
     def _get_commodity_name_by_code(self, code: str) -> str:
         """Returns the name of the commodity with the specified code.
@@ -2498,9 +2370,9 @@ class UEXcorpWingman(OpenAiWingman):
         Returns:
             str: The name of the commodity with the specified code.
         """
-        return self.commodity_code_dict.get(code.lower()) if code else None
+        return self._format_commodity_name(self.commodity_code_dict.get(code.lower())) if code else None
 
-    def _get_tradeports_by_positionname(self, name: str, direct: bool = False) -> list[dict[str, any]]:
+    def _get_tradeports_by_position_name(self, name: str, direct: bool = False) -> list[dict[str, any]]:
         """Returns all tradeports with the specified position name.
 
         Args:
