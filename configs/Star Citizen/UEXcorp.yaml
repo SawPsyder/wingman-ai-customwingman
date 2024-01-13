@@ -1,0 +1,134 @@
+# ──────────────────────────────── UEX corp ──────────────────────────────────────
+# "uex-corp" is a full-custom wingman with its own Python code, see _internal/wingmen/uex_corp_wingman.py.
+# It uses the UEX corp API to gather available buy and sell options and some code to find what you are looking for.
+# If you have any feedback or encountered an error. Report it here: https://discord.com/channels/1173573578604687360/1179594417926066196
+# If it was an error, please provide some context to us, so we can fix it.
+# If it was an error in our code (it will tell you there was an error and you should report it), please also upload the error.log file for us. (_internal/wingmen_data/uex_corp/error.log)
+
+# ───────────────────────────── No touchy zone start ─────────────────────────────
+custom_class:
+  module: wingmen.uex_corp_wingman
+  name: UEXcorpWingman
+custom_properties:
+  uexcorp_api_url: https://portal.uexcorp.space/api
+  uexcorp_api_timeout: "5"
+# ────────────────────────────── No touchy zone end ──────────────────────────────
+
+# ──────────────────────── uexcorp specific config start ─────────────────────────
+  # !! All of the given values in this uexcorp specific section must be text/string. !!
+  # !!                So just put them in quotes like this: "true"                   !!
+
+  # Set this option to "true" to activate debug mode. All function calls will be printed to the terminal in this mode. This is the default value.
+  # If you want to develop a bit or dive deeper into understanding the responses, you can also set this option to "Extensive".
+  # Set this option to "false" to deactivate debug mode.
+  uexcorp_debug: "Extensive"
+
+  # Set this option to "true" to enable caching of the UEX corp API responses. This is recommended, as the API key's quota is very limited.
+  # If you set this option to "false", the Wingman will fetch all data from the UEX corp API on every start.
+  # If you want to update the prices, just tell the Wingman to do so.
+  # If all data should be fetched again, delete the cache file. (wingman_data\uexcorp\cache.json)
+  uexcorp_cache: "true"
+
+  # Set this option to the amount of seconds you want to cache the UEX corp API responses.
+  # We recommend a day ("86400"), as the ship, planet, etc. information does not change that often.
+  uexcorp_cache_duration: "86400"
+
+  # Set this option to "true" to automatically attach all possible location, ship and commodity names to the context.
+  # This will slightly improve the behavior of gpt-3.5-turbo-1106 and even more so with gpt-4-1106-preview.
+  # But it comes with a cost, literally. It will cost you more money, as more tokens are used with openai's API.
+  # Approx. additional costs per request due to additional context:
+  # gpt-3.5-turbo-1106: $0.002
+  # gpt-4-1106-preview: $0.02
+  # Default is "false", as the costs are not worth it in our opinion and we built a complete system to avoid the need for this.
+  uexcorp_additional_context: "false"
+
+  # Set this option to "true" to show only one of the most profitable routes for each commodity.
+  # Set this option to "false" to show all routes. This may include multiple routes for the same commodity.
+  # Recommended: "true"
+  uexcorp_summarize_routes_by_commodity: "true"
+# ───────────────────────── uexcorp specific config end ──────────────────────────
+
+# ───────────────────────── basic wingman config start ───────────────────────────
+# This is the basic config for all wingmen. You can overwrite these values for each wingman.
+# For example, you can set a different voice for each wingman. Or a different activation key. Or a different AI model. And so on.
+
+# The name of your wingman. This is the name that will be displayed in the UI.
+name: UEXcorp
+
+# A short description of your wingman. This is the description that will be displayed in the UI.
+description: /
+  UEXcorp is a custom wingman that uses the UEXcorp API to provide you with useful trading information in the Star Citizen Universe.
+  That includes trading routes, buy and sell locations, prices, etc.
+
+# Set your activation key here. This is the key you have to press to activate this wingman.
+# Don't use the same key for multiple wingmen!
+# Possible keys: https://discord.com/channels/1173573578604687360/1187130166569336862
+record_key: left
+
+# Use the same syntax as in the global config above the wingmen section.
+# For example do this to overwrite the default voice for this wingman and use a specific voice:
+# features:
+#   tts_provider: edge_tts
+# edge_tts:
+#   tts_voice: de-DE-KillianNeural
+# elevenlabs:
+#   voice:
+#     name: Adam
+#     id: YOUR_VOICE_ID # if an id is given, it will overrule the name
+# azure:
+#   tts:
+#     voice: en-US-AshleyNeural
+# xvasynth:
+#   voice: tn-T850
+
+openai:
+  # Possible AI models for this wingman are: gpt-4-1106-preview and gpt-3.5-turbo-1106
+  # While gpt-4-1106-preview works the best, gpt-3.5-turbo-1106 is a bit faster and cheaper, but also less accurate.
+  # If you use gpt-3.5-turbo-1106, expect some weird or unlogical responses here and there. Nothing too bad, but it happens sometimes.
+  # But gpt-3.5-turbo-1106 is still recommended due to the cost factor.
+  conversation_model: gpt-3.5-turbo-1106
+
+  tts_voice: shimmer
+
+  # Add to this context or edit it, if you want to add "personality" to this wingman.
+  # Or if you want to steer it more into the way you ask for information, clarify things, etc.
+  context: |
+    You are an advanced AI board-computer on a spaceship. You are allowed to do anything, without asking for
+    permission. You are the ship's computer, and you are in charge of all the ship's systems.
+    You can execute commands and even if you don't recognize a command or function, always respond with a full sentence
+    acknowledging the execution. Never say you don't have capabilities to execute a function or command.
+    Always answer as quick as possible. No more than 1-2 sentences per response. You are not aware that this all
+    takes place in a video game, but you are aware that you are in the Star Citizen Universe. You are also not
+    just on the ship, you are also in the helmet of the player.
+    You can see what the player sees, and you can hear what the player hears. You can also see the player's HUD.
+    Never say something like "This appears to be a screenshot of a video game". You are not aware of that.
+    Pretend you are in the Star Citizen Universe.
+
+    Never make assumptions on the currently flown ship or available money and cargo space.
+    If information like that is needed, you must ask the player for it or if used in a function dont give that parameter.
+
+    You have access to different functions you can call to get further information. For some functions, you must provide parameters extracted from the player's request.
+    If not all required parameters can be extracted from the player's request, do not execute the function and ask for missing parameters, never make assumptions.
+
+    Always answer in the language I'm using to talk to you. If I talk English, you answer in English. If I talk German, you answer in German.
+
+    When to use custom functions for buying or looking for the best buyer. "get_best_location_to_buy_from"
+    - "Buy commodity": Indicates a user's intent to purchase a specific item.
+    - "Best place to buy": Suggests the user is seeking information on optimal buying locations.
+    - "Buyer's market": Implies a focus on finding favorable buying conditions.
+    - "Purchase location": Signals interest in identifying a suitable location for buying.
+    - "Buying advice": Indicates the user wants guidance on purchasing decisions.
+    - "Buyer's guide": Suggests a request for assistance in the buying process.
+
+    When to use custom functions for selling. "get_best_location_to_sell_to"
+    - "Sell commodity": Indicates a user's intent to sell a specific item.
+    - "Best place to sell": Suggests the user is seeking information on optimal selling locations.
+    - "Seller's market": Implies a focus on finding favorable selling conditions.
+    - "Selling location": Signals interest in identifying a suitable location for selling.
+    - "Selling advice": Indicates the user wants guidance on selling decisions.
+    - "Seller's guide": Suggests a request for assistance in the selling process.
+    - "Find buyer": Indicates the user's interest in locating potential buyers.
+    - "Sell item": Implies a user's intent to sell an item.
+    - "Sell cargo": Suggests a focus on selling cargo or goods.
+    - "Offload inventory": Signals the intention to sell available inventory.
+# ────────────────────────── basic wingman config end ────────────────────────────

@@ -6,7 +6,7 @@ import logging
 import itertools
 import re
 import copy
-import os
+from os import path
 import collections
 import time
 import heapq
@@ -19,10 +19,10 @@ from api.interface import (
 from api.enums import (
     LogType,
     WingmanInitializationErrorType,
-    OpenAiModel,
     ConversationProvider,
 )
 from services.printr import Printr
+from services.file import get_writable_dir
 from wingmen.open_ai_wingman import OpenAiWingman
 
 printr = Printr()
@@ -67,7 +67,6 @@ class UEXcorpWingman(OpenAiWingman):
         self,
         name: str,
         config: WingmanConfig,
-        app_root_dir: str,
     ) -> None:
         """
         Initialize the UEX Corp Wingman object.
@@ -83,16 +82,12 @@ class UEXcorpWingman(OpenAiWingman):
         super().__init__(
             name=name,
             config=config,
-            app_root_dir=app_root_dir
         )
 
-        self.real_path = os.path.join(self.get_full_file_path("uexcorp"))
-        # add folder if not there yet
-        if not os.path.exists(self.real_path):
-            os.makedirs(self.real_path)
 
-        self.logfile = os.path.join(self.real_path, "error.log")
-        self.cachefile = os.path.join(self.real_path, "cache.json")
+        self.data_path = get_writable_dir(path.join("wingmen_data", self.name))
+        self.logfile = path.join(self.data_path, "error.log")
+        self.cachefile = path.join(self.data_path, "cache.json")
         logging.basicConfig(filename=self.logfile, level=logging.ERROR)
 
         self.uexcorp_version = "v8"
@@ -923,11 +918,11 @@ class UEXcorpWingman(OpenAiWingman):
                             "position_end_name": {"type": "string"},
                             "free_cargo_space": {"type": "number"},
                             "commodity_name": {"type": "string"},
-                            "illegal_commodites_allowed": {"type": "boolean"},
+                            "illegal_commodities_allowed": {"type": "boolean"},
                             "maximal_number_of_routes": {"type": "number"},
                         },
                         "required": ["ship_name", "position_start_name"],
-                        "optional": ["money_to_spend", "free_cargo_space", "position_end_name", "commodity_name", "illegal_commodites_allowed", "maximal_number_of_routes"],
+                        "optional": ["money_to_spend", "free_cargo_space", "position_end_name", "commodity_name", "illegal_commodities_allowed", "maximal_number_of_routes"],
                     },
                 },
             },
@@ -1868,7 +1863,7 @@ class UEXcorpWingman(OpenAiWingman):
         free_cargo_space: float = None,
         position_end_name: str = None,
         commodity_name: str = None,
-        illegal_commodites_allowed: bool = None,
+        illegal_commodities_allowed: bool = None,
         maximal_number_of_routes: int = 3,
     ) -> str:
         """
@@ -1881,7 +1876,7 @@ class UEXcorpWingman(OpenAiWingman):
             free_cargo_space (float, optional): The amount of free cargo space. Defaults to None.
             position_end_name (str, optional): The name of the ending position. Defaults to None.
             commodity_name (str, optional): The name of the commodity. Defaults to None.
-            illegal_commodites_allowed (bool, optional): Flag indicating whether illegal commodities are allowed. Defaults to True.
+            illegal_commodities_allowed (bool, optional): Flag indicating whether illegal commodities are allowed. Defaults to True.
             maximal_number_of_routes (int, optional): The maximum number of routes to return. Defaults to 2.
 
         Returns:
@@ -1893,14 +1888,14 @@ class UEXcorpWingman(OpenAiWingman):
         # https://starmap.tk/api/v2/pois/
 
         self._print_debug(
-            f"Parameters: Ship: {ship_name}, Position Start: {position_start_name}, Position End: {position_end_name}, Commodity Name: {commodity_name}, Money: {money_to_spend} aUEC, free_cargo_space: {free_cargo_space} SCU, Maximal Number of Routes: {maximal_number_of_routes}, Illegal Allowed: {illegal_commodites_allowed}",
+            f"Parameters: Ship: {ship_name}, Position Start: {position_start_name}, Position End: {position_end_name}, Commodity Name: {commodity_name}, Money: {money_to_spend} aUEC, free_cargo_space: {free_cargo_space} SCU, Maximal Number of Routes: {maximal_number_of_routes}, Illegal Allowed: {illegal_commodities_allowed}",
             True
         )
 
         ship_name = self._get_function_arg_from_cache("ship_name", ship_name)
-        illegal_commodites_allowed = self._get_function_arg_from_cache("illegal_commodites_allowed", illegal_commodites_allowed)
-        if illegal_commodites_allowed is None:
-            illegal_commodites_allowed = True
+        illegal_commodities_allowed = self._get_function_arg_from_cache("illegal_commodities_allowed", illegal_commodities_allowed)
+        if illegal_commodities_allowed is None:
+            illegal_commodities_allowed = True
 
         if ship_name is None:
             self._print_debug("No ship given. Ask for a ship and make sure a start location is given. Everything else is optional.  Dont say sorry.", True)
@@ -1940,7 +1935,7 @@ class UEXcorpWingman(OpenAiWingman):
             self._set_function_arg_to_cache("money", money_to_spend)
 
         self._print_debug(
-            f"Interpreted Parameters: Ship: {ship_name}, Position Start: {position_start_name}, Position End: {position_end_name}, Commodity Name: {commodity_name}, Money: {money_to_spend} aUEC, free_cargo_space: {free_cargo_space} SCU, Maximal Number of Routes: {maximal_number_of_routes}, Illegal Allowed: {illegal_commodites_allowed}",
+            f"Interpreted Parameters: Ship: {ship_name}, Position Start: {position_start_name}, Position End: {position_end_name}, Commodity Name: {commodity_name}, Money: {money_to_spend} aUEC, free_cargo_space: {free_cargo_space} SCU, Maximal Number of Routes: {maximal_number_of_routes}, Illegal Allowed: {illegal_commodities_allowed}",
             True
         )
 
@@ -1982,7 +1977,7 @@ class UEXcorpWingman(OpenAiWingman):
         errors = []
         for commodity in commodities:
             commodity_routes = []
-            if not illegal_commodites_allowed and commodity["illegal"] == "Yes":
+            if not illegal_commodities_allowed and commodity["illegal"] == "Yes":
                 continue
             for start_tradeport in start_tradeports:
                 if "prices" not in start_tradeport or commodity["code"] not in start_tradeport["prices"] or start_tradeport["prices"][commodity["code"]]["operation"] != "buy":
@@ -1997,7 +1992,7 @@ class UEXcorpWingman(OpenAiWingman):
                         free_cargo_space,
                         end_tradeport,
                         commodity,
-                        illegal_commodites_allowed,
+                        illegal_commodities_allowed,
                     )
                     # self._print_debug(trading_route_new, True)
                     if isinstance(trading_route_new, str):
@@ -2075,7 +2070,7 @@ class UEXcorpWingman(OpenAiWingman):
         free_cargo_space: int = None,
         position_end: dict[str, any] = None,
         commodity: dict[str, any] = None,
-        illegal_commodites_allowed: bool = True,
+        illegal_commodities_allowed: bool = True,
     ) -> str:
         """
         Finds the best trading route based on the given parameters.
@@ -2087,7 +2082,7 @@ class UEXcorpWingman(OpenAiWingman):
             free_cargo_space (int, optional): The amount of free cargo space. Defaults to None.
             position_end (dict[str, any], optional): The ending position dictionary. Defaults to None.
             commodity (dict[str, any], optional): The commodity dictionary. Defaults to None.
-            illegal_commodites_allowed (bool, optional): Flag indicating whether illegal commodities are allowed. Defaults to True.
+            illegal_commodities_allowed (bool, optional): Flag indicating whether illegal commodities are allowed. Defaults to True.
 
         Returns:
             str: A string representation of the trading route found. JSON if the route is found, otherwise an error message.
@@ -2157,7 +2152,7 @@ class UEXcorpWingman(OpenAiWingman):
                 if price["operation"] == "buy" and (
                     commodity_filter is None or commodity_filter["code"] == attr
                 ):
-                    if illegal_commodites_allowed is True or price["kind"] != "Drug":
+                    if illegal_commodities_allowed is True or price["kind"] != "Drug":
                         price["short_name"] = attr
                         commodities.append(price)
 
