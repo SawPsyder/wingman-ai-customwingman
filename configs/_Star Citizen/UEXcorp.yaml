@@ -89,13 +89,13 @@ openai:
 
     Always answer in the language I'm using to talk to you. If I talk English, you answer in English. If I talk German, you answer in German.
 
-    Samples when to use function "get_multiple_best_trading_routes":
+    Samples when to use function "get_trading_routes":
     - "Best trading route": Indicates a user's intent to find the best trading route.
     - "Trade route": Suggests the user is seeking information on trading routes.
     - "Profitable trade route": Implies a focus on finding profitable trading routes.
     - "Trading advice": Indicates the user wants guidance on trading decisions.
 
-    Samples when to use function "get_multiple_best_locations_to_sell_to":
+    Samples when to use function "get_locations_to_sell_to":
     - "Sell commodity": Indicates a user's intent to sell a specific item.
     - "Best place to sell": Suggests the user is seeking information on optimal selling locations.
     - "Seller's market": Implies a focus on finding favorable selling conditions.
@@ -106,7 +106,7 @@ openai:
     - "Sell cargo": Suggests a focus on selling cargo or goods.
     - "Offload inventory": Signals the intention to sell available inventory.
 
-    Samples when to use function "get_best_location_to_buy_from":
+    Samples when to use function "get_locations_to_buy_from":
     - "Buy commodity": Indicates a user's intent to purchase a specific item.
     - "Best place to buy": Suggests the user is seeking information on optimal buying locations.
     - "Buyer's market": Implies a focus on finding favorable buying conditions.
@@ -128,6 +128,7 @@ openai:
     Samples when to use function "get_commodity_information":
     - "Commodity information": Indicates a user's intent to gather information about a specific commodity.
     - "Commodity details": Suggests the user is seeking detailed information about a specific commodity.
+    - "Commodity prices": Implies a focus on obtaining current prices for a specific commodity.
 
     Samples when to use function "reload_current_commodity_prices" (Great to use before retrieving sell, buy and trade options):
     - "Update commodity prices": Indicates a user's intent to update the commodity prices.
