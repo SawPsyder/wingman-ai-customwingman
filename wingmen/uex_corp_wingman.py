@@ -62,6 +62,7 @@ class UEXcorpWingman(OpenAiWingman):
         "uexcorp_additional_context": {"type":"bool", "values":[]},
         "uexcorp_summarize_routes_by_commodity": {"type":"bool", "values":[]},
         "uexcorp_tradestart_mandatory": {"type":"bool", "values":[]},
+        "uexcorp_trade_blacklist": {"type":"json", "values":[]},
     }
 
     def __init__(
@@ -76,7 +77,7 @@ class UEXcorpWingman(OpenAiWingman):
             name (str): The name of the wingman.
             config (dict[str, any]): The configuration settings for the wingman.
             app_root_dir (str): The root directory of the application.
-            
+
         Returns:
             None
         """
@@ -102,6 +103,7 @@ class UEXcorpWingman(OpenAiWingman):
         self.uexcorp_additional_context = None
         self.uexcorp_summarize_routes_by_commodity = None
         self.uexcorp_tradestart_mandatory = None
+        self.uexcorp_trade_blacklist = None
 
         self.ships = []
         self.ship_names = []
@@ -277,6 +279,17 @@ class UEXcorpWingman(OpenAiWingman):
                         WingmanInitializationError(
                             wingman_name=self.name,
                             message=f"Invalid custom property '{key}' in config. Value must be 'true' or 'false'.",
+                            error_type=WingmanInitializationErrorType.INVALID_CONFIG,
+                        )
+                    )
+            elif typesettings == "json":
+                try:
+                    json.loads(self.config.custom_properties[key])
+                except (json.decoder.JSONDecodeError):
+                    errors.append(
+                        WingmanInitializationError(
+                            wingman_name=self.name,
+                            message=f"Invalid custom property '{key}' in config. Value must be a valid JSON object.",
                             error_type=WingmanInitializationErrorType.INVALID_CONFIG,
                         )
                     )
@@ -478,12 +491,14 @@ class UEXcorpWingman(OpenAiWingman):
                         typesettings = "bool"
                     else:
                         typesettings = "str"
-            
+
             if typesettings == "bool":
                 value = value == "true"
             elif typesettings == "int":
                 value = int(value)
-            
+            elif typesettings == "json":
+                value = json.loads(value)
+
             setattr(self, key, value)
 
         if not self.uexcorp_debug and self.debug:
@@ -491,6 +506,8 @@ class UEXcorpWingman(OpenAiWingman):
 
         self.start_execution_benchmark()
         self._load_data()
+
+
 
         self.ship_names = [
             self._format_ship_name(ship)
@@ -601,13 +618,13 @@ class UEXcorpWingman(OpenAiWingman):
             int: The current timestamp.
         """
         return int(datetime.now().timestamp())
-    
+
     def _custom_gpt_call(self, messages) -> str:
         """
         Performs a GPT call and returns the response as a string.
 
         Args:
-            messages: The messages to be sent to the model. 
+            messages: The messages to be sent to the model.
 
         Returns:
             str: The response from the model.
@@ -1195,7 +1212,7 @@ class UEXcorpWingman(OpenAiWingman):
             output_ship = self._get_converted_ship_for_output(ship)
             self._print_debug(output_ship, True)
             return json.dumps(output_ship)
-        
+
     def _gpt_call_get_ship_comparison(self, ship_names: list[str] = None) -> str:
         """
         Retrieves information about multiple ships.
@@ -1834,7 +1851,7 @@ class UEXcorpWingman(OpenAiWingman):
     def _get_data_location_sellprice(self, tradeport, commodity, ship=None, amount=1):
         if ship is not None and ship["hull_trading"] is True and tradeport["hull_trading"] is False:
             return None
-        
+
         if "prices" not in tradeport:
             return None
 
@@ -1847,7 +1864,7 @@ class UEXcorpWingman(OpenAiWingman):
     def _get_data_location_buyprice(self, tradeport, commodity, ship=None, amount=1):
         if ship is not None and ship["hull_trading"] is True and tradeport["hull_trading"] is False:
             return None
-        
+
         if "prices" not in tradeport:
             return None
 
@@ -2151,6 +2168,37 @@ class UEXcorpWingman(OpenAiWingman):
             "sell": 0,
         }
 
+        # apply trade port blacklist
+        if len(self.uexcorp_trade_blacklist):
+            for blacklist_item in self.uexcorp_trade_blacklist:
+                if "tradeport" in blacklist_item and blacklist_item["tradeport"]:
+                    for tradeport in start_tradeports:
+                        if tradeport["name"] == blacklist_item["tradeport"]:
+                            if "commodity" not in blacklist_item or not blacklist_item["commodity"]:
+                                # remove tradeport, if no commodity given
+                                start_tradeports.remove(tradeport)
+                                break
+                            else:
+                                commodity = self._get_commodity_by_name(blacklist_item["commodity"])
+                                for commodity_code, data in tradeport["prices"].items():
+                                    if commodity["code"] == commodity_code:
+                                        # remove commodity code from tradeport
+                                        tradeport["prices"].pop(commodity_code)
+                                        break
+                    for tradeport in end_tradeports:
+                        if tradeport["name"] == blacklist_item["tradeport"]:
+                            if "commodity" not in blacklist_item or not blacklist_item["commodity"]:
+                                # remove tradeport, if no commodity given
+                                end_tradeports.remove(tradeport)
+                                break
+                            else:
+                                commodity = self._get_commodity_by_name(blacklist_item["commodity"])
+                                for commodity_code, data in tradeport["prices"].items():
+                                    if commodity["code"] == commodity_code:
+                                        # remove commodity code from tradeport
+                                        tradeport["prices"].pop(commodity_code)
+                                        break
+
         for tradeport_start in start_tradeports:
             commodities = []
             if "prices" not in tradeport_start:
@@ -2160,15 +2208,46 @@ class UEXcorpWingman(OpenAiWingman):
                 if price["operation"] == "buy" and (
                     commodity_filter is None or commodity_filter["code"] == attr
                 ):
-                    if illegal_commodities_allowed is True or price["kind"] != "Drug":
+                    commodity = self._get_commodity_by_code(attr)
+                    if illegal_commodities_allowed is True or commodity["illegal"] != "Yes":
                         price["short_name"] = attr
-                        commodities.append(price)
+
+                        in_blacklist = False
+                        # apply commodity blacklist
+                        if len(self.uexcorp_trade_blacklist):
+                            for blacklist_item in self.uexcorp_trade_blacklist:
+                                if "commodity" in blacklist_item and blacklist_item["commodity"] and not "tradeport" in blacklist_item or not blacklist_item["tradeport"]:
+                                    if commodity["name"] == blacklist_item["commodity"]:
+                                        # remove commodity code from tradeport
+                                        in_blacklist = True
+                                        break
+
+                        if not in_blacklist:
+                            commodities.append(price)
+
+            if len(commodities) < 1:
+                continue
 
             for tradeport_end in end_tradeports:
                 if "prices" not in tradeport_end or (commodity_filter is not None and commodity_filter["code"] not in tradeport_end["prices"]):
                     continue
                 for attr, price in tradeport_end["prices"].items():
                     price["short_name"] = attr
+
+                    sell_commodity = self._get_commodity_by_code(attr)
+                    in_blacklist = False
+                    # apply commodity blacklist
+                    if len(self.uexcorp_trade_blacklist):
+                        for blacklist_item in self.uexcorp_trade_blacklist:
+                            if "commodity" in blacklist_item and blacklist_item["commodity"] and not "tradeport" in blacklist_item or not blacklist_item["tradeport"]:
+                                if sell_commodity["name"] == blacklist_item["commodity"]:
+                                    # remove commodity code from tradeport
+                                    in_blacklist = True
+                                    break
+
+                    if in_blacklist:
+                        continue
+
                     for commodity in commodities:
                         if (
                             commodity["short_name"] == price["short_name"]
@@ -2374,6 +2453,17 @@ class UEXcorpWingman(OpenAiWingman):
             str: The name of the commodity with the specified code.
         """
         return self._format_commodity_name(self.commodity_code_dict.get(code.lower())) if code else None
+    
+    def _get_commodity_by_code(self, code: str) -> dict[str, any]|None:
+        """Finds the commodity with the specified code and returns the commodity or None.
+
+        Args:
+            code (str): The code of the commodity to search for.
+
+        Returns:
+            Optional[object]: The commodity object if found, otherwise None.
+        """
+        return self.commodity_code_dict.get(code.lower()) if code else None
 
     def _get_tradeports_by_position_name(self, name: str, direct: bool = False) -> list[dict[str, any]]:
         """Returns all tradeports with the specified position name.
@@ -2386,7 +2476,7 @@ class UEXcorpWingman(OpenAiWingman):
         """
         if not name:
             return []
-        
+
         tradeports = []
 
         tradeport_temp = self._get_tradeport_by_name(name)
@@ -2431,7 +2521,7 @@ class UEXcorpWingman(OpenAiWingman):
             list[dict[str, any]]: A list of planets matching the system code.
         """
         return self.planets_by_system.get(code.lower(), []) if code else []
-    
+
     def _get_tradeports_by_systemcode(self, code: str) -> list[dict[str, any]]:
         """Returns all tradeports with the specified system code.
 
@@ -2442,7 +2532,7 @@ class UEXcorpWingman(OpenAiWingman):
             list[dict[str, any]]: A list of tradeports matching the system code.
         """
         return self.tradeports_by_system.get(code.lower(), []) if code else []
-    
+
     def _get_tradeports_by_planetcode(self, code: str) -> list[dict[str, any]]:
         """Returns all tradeports with the specified planet code.
 
@@ -2453,7 +2543,7 @@ class UEXcorpWingman(OpenAiWingman):
             list[dict[str, any]]: A list of tradeports matching the planet code.
         """
         return self.tradeports_by_planet.get(code.lower(), []) if code else []
-    
+
     def _get_tradeports_by_satellitecode(self, code: str) -> list[dict[str, any]]:
         """Returns all tradeports with the specified satellite code.
 
@@ -2464,7 +2554,7 @@ class UEXcorpWingman(OpenAiWingman):
             list[dict[str, any]]: A list of tradeports matching the satellite code.
         """
         return self.tradeports_by_satellite.get(code.lower(), []) if code else []
-    
+
     def _get_tradeports_by_citycode(self, code: str) -> list[dict[str, any]]:
         """Returns all tradeports with the specified city code.
 
@@ -2475,7 +2565,7 @@ class UEXcorpWingman(OpenAiWingman):
             list[dict[str, any]]: A list of tradeports matching the city code.
         """
         return self.tradeports_by_city.get(code.lower(), []) if code else []
-    
+
     def _get_tradeports_by_planetname(self, name: str) -> list[dict[str, any]]:
         """Returns all tradeports with the specified planet name.
 
@@ -2487,7 +2577,7 @@ class UEXcorpWingman(OpenAiWingman):
         """
         planet = self._get_planet_by_name(name)
         return self._get_tradeports_by_planetcode(planet["code"]) if planet else []
-    
+
     def _get_tradeports_by_satellitename(self, name: str) -> list[dict[str, any]]:
         """Returns all tradeports with the specified satellite name.
 
@@ -2499,7 +2589,7 @@ class UEXcorpWingman(OpenAiWingman):
         """
         satellite = self._get_satellite_by_name(name)
         return self._get_tradeports_by_satellitecode(satellite["code"]) if satellite else []
-    
+
     def _get_tradeports_by_cityname(self, name: str) -> list[dict[str, any]]:
         """Returns all tradeports with the specified city name.
 
@@ -2511,7 +2601,7 @@ class UEXcorpWingman(OpenAiWingman):
         """
         city = self._get_city_by_name(name)
         return self._get_tradeports_by_citycode(city["code"]) if city else []
-    
+
     def _get_tradeports_by_cityname(self, name: str) -> list[dict[str, any]]:
         """Returns all tradeports with the specified city name.
 
@@ -2523,7 +2613,7 @@ class UEXcorpWingman(OpenAiWingman):
         """
         city = self._get_city_by_name(name)
         return self._get_tradeports_by_citycode(city["code"]) if city else []
-    
+
     def _get_tradeports_by_systemname(self, name: str) -> list[dict[str, any]]:
         """Returns all tradeports with the specified system name.
 
