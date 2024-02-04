@@ -26,7 +26,7 @@ This wingman is based on a data dump we retrieve from the [uexcorp API](https://
 This gives you the best trading routes for your ship and current location. You can also specify some parameters to get more specific results.
 
 - **ship name** (required, just the name without manufacturer. So "Cutlass Black" for example)
-- **current location** Anything like Stanton, Hurston, Yela, Area 18, ...
+- **current location** Anything like Stanton, Hurston, Yela, Area 18, ... (Optional, if uexcorp_tradestart_mandatory is set to false in the config. Otherwise mandatory.)
 - target position (Traveling from Hurston to Arccorp? Maybe you should take something with you if your are flying there anyway!)
 - budget
 - free cargo space (if not given, the ships cargo space is used. But got just 56 SCU free in your Caterpillar? -> give this info then.)
