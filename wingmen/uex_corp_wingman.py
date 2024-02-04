@@ -61,6 +61,7 @@ class UEXcorpWingman(OpenAiWingman):
         "uexcorp_cache_duration": {"type":"int", "values":[]},
         "uexcorp_additional_context": {"type":"bool", "values":[]},
         "uexcorp_summarize_routes_by_commodity": {"type":"bool", "values":[]},
+        "uexcorp_tradestart_mandatory": {"type":"bool", "values":[]},
     }
 
     def __init__(
@@ -100,6 +101,7 @@ class UEXcorpWingman(OpenAiWingman):
         self.uexcorp_cache_duration = None
         self.uexcorp_additional_context = None
         self.uexcorp_summarize_routes_by_commodity = None
+        self.uexcorp_tradestart_mandatory = None
 
         self.ships = []
         self.ship_names = []
@@ -873,7 +875,7 @@ class UEXcorpWingman(OpenAiWingman):
             if function_name in functions:
                 if self.uexcorp_debug:
                     start = time.perf_counter()
-                self._print_debug(f"❖ Executing function: {function_name}")
+                self._print_debug(f"Executing function: {function_name}")
                 function = getattr(self, "_gpt_call_" + functions[function_name])
                 function_response = function(**function_args)
                 if self.uexcorp_debug:
@@ -921,8 +923,8 @@ class UEXcorpWingman(OpenAiWingman):
                             "illegal_commodities_allowed": {"type": "boolean"},
                             "maximal_number_of_routes": {"type": "number"},
                         },
-                        "required": ["ship_name", "position_start_name"],
-                        "optional": ["money_to_spend", "free_cargo_space", "position_end_name", "commodity_name", "illegal_commodities_allowed", "maximal_number_of_routes"],
+                        "required": ["ship_name", "position_start_name"] if self.uexcorp_tradestart_mandatory else ["ship_name"],
+                        "optional": ["money_to_spend", "free_cargo_space", "position_end_name", "commodity_name", "illegal_commodities_allowed", "maximal_number_of_routes"] if self.uexcorp_tradestart_mandatory else ["position_start_name", "money_to_spend", "free_cargo_space", "position_end_name", "commodity_name", "illegal_commodities_allowed", "maximal_number_of_routes"],
                     },
                 },
             },
@@ -1901,7 +1903,7 @@ class UEXcorpWingman(OpenAiWingman):
             self._print_debug("No ship given. Ask for a ship and make sure a start location is given. Everything else is optional.  Dont say sorry.", True)
             return "No ship given. Ask for a ship and make sure a start location is given. Everything else is optional.  Dont say sorry."
 
-        if position_start_name is None:
+        if self.uexcorp_tradestart_mandatory and position_start_name is None:
             self._print_debug(
                 "No start position given. Ask for a start position. (Station, Planet, Satellite, City or System), as the ship information is given, thats all we need.",
                 True
@@ -1959,7 +1961,7 @@ class UEXcorpWingman(OpenAiWingman):
             free_cargo_space = int(free_cargo_space)
         else:
             free_cargo_space = None
-        position_start = self._get_tradeport_by_name(position_start_name)
+        position_start = self._get_tradeport_by_name(position_start_name) if position_start_name else None
         position_end = self._get_tradeport_by_name(position_end_name) if position_end_name else None
         commodity = self._get_commodity_by_name(commodity_name) if commodity_name else None
         maximal_number_of_routes = int(maximal_number_of_routes or 2)
@@ -1985,6 +1987,12 @@ class UEXcorpWingman(OpenAiWingman):
                 for end_tradeport in end_tradeports:
                     if "prices" not in end_tradeport or commodity["code"] not in end_tradeport["prices"] or end_tradeport["prices"][commodity["code"]]["operation"] != "sell":
                         continue
+
+                    if ship and ship["hull_trading"] is True and ("hull_trading" not in start_tradeport or start_tradeport["hull_trading"] is not True or "hull_trading" not in end_tradeport or end_tradeport["hull_trading"] is not True):
+                        continue
+
+                    # self._print_debug(f"Searching traderoute..(Ship: {ship['name']}, Start: {start_tradeport['name']}, End: {end_tradeport['name']})", True)
+
                     trading_route_new = self._get_trading_route(
                         ship,
                         start_tradeport,
@@ -2087,7 +2095,7 @@ class UEXcorpWingman(OpenAiWingman):
         Returns:
             str: A string representation of the trading route found. JSON if the route is found, otherwise an error message.
         """
-        
+
         # set variables
         cargo_space = ship["scu"]
         if free_cargo_space:
@@ -2121,7 +2129,7 @@ class UEXcorpWingman(OpenAiWingman):
         if ship["hull_trading"] is True:
             end_tradeports = [
                 tradeport
-                for tradeport in start_tradeports
+                for tradeport in end_tradeports
                 if "hull_trading" in tradeport and tradeport["hull_trading"] is True
             ]
         if len(end_tradeports) < 1:
@@ -2210,7 +2218,7 @@ class UEXcorpWingman(OpenAiWingman):
 
         return best_route
 
-    def _get_ship_by_name(self, name: str) -> Optional[object]:
+    def _get_ship_by_name(self, name: str) -> dict[str, any]|None:
         """Finds the ship with the specified name and returns the ship or None.
 
         Args:
@@ -2221,7 +2229,7 @@ class UEXcorpWingman(OpenAiWingman):
         """
         return self.ship_dict.get(name.lower()) if name else None
 
-    def _get_tradeport_by_name(self, name: str) -> Optional[object]:
+    def _get_tradeport_by_name(self, name: str) -> dict[str, any]|None:
         """Finds the tradeport with the specified name and returns the tradeport or None.
 
         Args:
@@ -2232,7 +2240,7 @@ class UEXcorpWingman(OpenAiWingman):
         """
         return self.tradeport_dict.get(name.lower()) if name else None
 
-    def _get_tradeport_by_code(self, code: str) -> Optional[object]:
+    def _get_tradeport_by_code(self, code: str) -> dict[str, any]|None:
         """Finds the tradeport with the specified code and returns the tradeport or None.
 
         Args:
@@ -2243,7 +2251,7 @@ class UEXcorpWingman(OpenAiWingman):
         """
         return self.tradeport_code_dict.get(code.lower()) if code else None
 
-    def _get_planet_by_name(self, name: str) -> Optional[object]:
+    def _get_planet_by_name(self, name: str) -> dict[str, any]|None:
         """Finds the planet with the specified name and returns the planet or None.
 
         Args:
@@ -2254,7 +2262,7 @@ class UEXcorpWingman(OpenAiWingman):
         """
         return self.planet_dict.get(name.lower()) if name else None
 
-    def _get_city_by_name(self, name: str) -> Optional[object]:
+    def _get_city_by_name(self, name: str) -> dict[str, any]|None:
         """Finds the city with the specified name and returns the city or None.
 
         Args:
@@ -2265,7 +2273,7 @@ class UEXcorpWingman(OpenAiWingman):
         """
         return self.city_dict.get(name.lower()) if name else None
 
-    def _get_satellite_by_name(self, name: str) -> Optional[object]:
+    def _get_satellite_by_name(self, name: str) -> dict[str, any]|None:
         """Finds the satellite with the specified name and returns the satellite or None.
 
         Args:
@@ -2276,7 +2284,7 @@ class UEXcorpWingman(OpenAiWingman):
         """
         return self.satellite_dict.get(name.lower()) if name else None
 
-    def _get_system_by_name(self, name: str) -> Optional[object]:
+    def _get_system_by_name(self, name: str) -> dict[str, any]|None:
         """Finds the system with the specified name and returns the system or None.
 
         Args:
@@ -2287,7 +2295,7 @@ class UEXcorpWingman(OpenAiWingman):
         """
         return self.system_dict.get(name.lower()) if name else None
 
-    def _get_commodity_by_name(self, name: str) -> Optional[object]:
+    def _get_commodity_by_name(self, name: str) -> dict[str, any]|None:
         """Finds the commodity with the specified name and returns the commodity or None.
 
         Args:

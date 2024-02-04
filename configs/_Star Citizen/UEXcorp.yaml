@@ -46,6 +46,11 @@ custom_properties:
   # Set this option to "false" to show all routes. This may include multiple routes for the same commodity.
   # Recommended: "true"
   uexcorp_summarize_routes_by_commodity: "true"
+
+  # Set this option to "true" to make the start location for trade route calculation a mandatory information.
+  # Set this option to "false" to make the start location for trade route calculation a optional information.
+  # If "false" and no start location is given, all tradeports are taken into account.
+  uexcorp_tradestart_mandatory: "true"
 # ───────────────────────── uexcorp specific config end ──────────────────────────
 
 # ───────────────────────── basic wingman config start ───────────────────────────
