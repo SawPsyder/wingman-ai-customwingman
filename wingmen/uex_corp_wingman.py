@@ -2237,7 +2237,7 @@ class UEXcorpWingman(OpenAiWingman):
                     sell_commodity = self._get_commodity_by_code(attr)
                     in_blacklist = False
                     # apply commodity blacklist
-                    if len(self.uexcorp_trade_blacklist):
+                    if sell_commodity and len(self.uexcorp_trade_blacklist):
                         for blacklist_item in self.uexcorp_trade_blacklist:
                             if "commodity" in blacklist_item and blacklist_item["commodity"] and not "tradeport" in blacklist_item or not blacklist_item["tradeport"]:
                                 if sell_commodity["name"] == blacklist_item["commodity"]:
