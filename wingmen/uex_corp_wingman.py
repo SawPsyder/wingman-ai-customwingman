@@ -248,7 +248,17 @@ class UEXcorpWingman(OpenAiWingman):
         for key, settings in self.CUSTOMCONFIG.items():
             typesettings = settings["type"]
             valueoptions = settings["values"]
-            if not key in self.config.custom_properties or self.config.custom_properties[key] == "":
+
+            value = next(
+                (
+                    prop.value
+                    for prop in self.config.custom_properties
+                    if prop.id == key
+                ),
+                None,
+            )
+
+            if not value:
                 errors.append(
                     WingmanInitializationError(
                         wingman_name=self.name,
@@ -256,7 +266,7 @@ class UEXcorpWingman(OpenAiWingman):
                         error_type=WingmanInitializationErrorType.INVALID_CONFIG,
                     )
                 )
-            elif valueoptions and not self.config.custom_properties[key] in valueoptions:
+            elif valueoptions and not value in valueoptions:
                 errors.append(
                     WingmanInitializationError(
                         wingman_name=self.name,
@@ -266,7 +276,7 @@ class UEXcorpWingman(OpenAiWingman):
                 )
             elif typesettings == "int":
                 try:
-                    int(self.config.custom_properties[key])
+                    int(value)
                 except ValueError:
                     errors.append(
                         WingmanInitializationError(
@@ -276,7 +286,7 @@ class UEXcorpWingman(OpenAiWingman):
                         )
                     )
             elif typesettings == "bool":
-                if not self.config.custom_properties[key] in ["true", "false"]:
+                if not value in ["true", "false"]:
                     errors.append(
                         WingmanInitializationError(
                             wingman_name=self.name,
@@ -286,12 +296,12 @@ class UEXcorpWingman(OpenAiWingman):
                     )
             elif typesettings == "json":
                 try:
-                    json.loads(self.config.custom_properties[key])
+                    json.loads(value)
                 except (json.decoder.JSONDecodeError):
                     errors.append(
                         WingmanInitializationError(
                             wingman_name=self.name,
-                            message=f"Invalid custom property '{key}' in config. Value must be a valid JSON object.",
+                            message=f"Invalid custom property '{key}' in config. Value must be a valid JSON string.",
                             error_type=WingmanInitializationErrorType.INVALID_CONFIG,
                         )
                     )
@@ -482,7 +492,14 @@ class UEXcorpWingman(OpenAiWingman):
         for key, settings in self.CUSTOMCONFIG.items():
             typesettings = settings["type"]
             # valueoptions = settings["values"]
-            value = self.config.custom_properties.get(key)
+            value = next(
+                (
+                    prop.value
+                    for prop in self.config.custom_properties
+                    if prop.id == key
+                ),
+                None,
+            )
 
             if typesettings == "auto":
                 try:

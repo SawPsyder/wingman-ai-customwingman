@@ -15,9 +15,9 @@ This wingman is based on a data dump we retrieve from the [uexcorp API](https://
 ## How to set it up?
 
 1. Download the files from this repository.
-2. Copy `wingmen` and `configs` folders into the Wingman Ai configuration directory. (By default on Windows: `%appdata%\Roaming\ShipBit\WingmanAI\2_0_0b2`)
-3. Get your own uexcorp API key [here](https://portal.uexcorp.space/terminal) by typing `apikey your_username your@mail.com` at the bottom and follow the written instructions. Or just reuse the api key from the previous version. On first launch you will be asked for it.
-4. On the next Wingman AI start, it will take a moment to load all data. Thats it. Enjoy and feel free to leave us feedback [here](https://discord.com/channels/1173573578604687360/1179594417926066196/1185567252184047656) 🙂
+2. Copy `wingmen` and `configs` folders into the Wingman Ai configuration directory. (By default on Windows: `%appdata%\ShipBit\WingmanAI\2_0_0b2`)
+3. Get your own uexcorp API key [here](https://portal.uexcorp.space/terminal) by typing `apikey yourusername your@mail.com` at the bottom and follow the written instructions. Or just reuse the api key from the previous version. On first launch you will be asked for it.
+4. On the first Wingman AI start, it will take a moment to load all data. Thats it. Enjoy and feel free to leave us feedback [here](https://discord.com/channels/1173573578604687360/1179594417926066196/1185567252184047656) 🙂
 
 ## What can I do then?
 
@@ -70,3 +70,53 @@ Gives you some basic information and prices.
 ### Ask for a price update
 
 Gets the current prices from the API.
+
+## What can I configure?
+
+### Debug Mode (true, false, Extensive)
+Set this option to "true" to activate debug mode. All function calls will be printed to the terminal in this mode. This is the default value.
+If you want to develop a bit or dive deeper into understanding the responses, you can also set this option to "Extensive".
+Set this option to "false" to deactivate debug mode.
+
+### Enable Cache (true, false)
+Set this option to "true" to enable caching of the UEX corp API responses. This is recommended, as the API key's quota is very limited.
+If you set this option to "false", the Wingman will fetch all data from the UEX corp API on every start.
+If you want to update the prices, just tell the Wingman to do so.
+If all data should be fetched again, delete the cache file. (wingman_data\uexcorp\cache.json)
+
+### Cache Duration (seconds)
+Set this option to the amount of seconds you want to cache the UEX corp API responses.
+We recommend a day ("86400"), as the ship, planet, etc. information does not change that often.
+
+### Additional Context (true, false)
+Set this option to "true" to automatically attach all possible location, ship and commodity names to the context.
+This will slightly improve the behavior of gpt-3.5-turbo-1106 and even more so with gpt-4-1106-preview.
+But it comes with a cost, literally. It will cost you more money, as more tokens are used with openai's API.
+Approx. additional costs per request due to additional context:
+gpt-3.5-turbo-1106: $0.002
+gpt-4-1106-preview: $0.02
+Default is "false", as the costs are not worth it in our opinion and we built a complete system to avoid the need for this.
+
+### Summarize Routes by Commodity (true, false)
+Set this option to "true" to show only one of the most profitable routes for each commodity.
+Set this option to "false" to show all routes. This may include multiple routes for the same commodity.
+Recommended: "true"
+
+### Trade Start Mandatory (true, false)
+Set this option to "true" to make the start location for trade route calculation a mandatory information.
+Set this option to "false" to make the start location for trade route calculation a optional information.
+If "false" and no start location is given, all tradeports are taken into account.
+
+### Trade Blacklist (JSON string)
+Use this to blacklist certain trade ports or commodities or combinations of both.
+Default value is '[]', which means no trade ports or commodities are blacklisted.
+If we want to add a trade port to the blacklist, we add something like this: {"tradeport":"Baijini Point"} This will blacklist the trade port completely from trade route calculations.
+If we want to add a commodity to the blacklist, we add something like this: {"commodity":"Medical Supplies"} This will blacklist the commodity completely from trade route calculations.
+If we want to add a combination to the blacklist, we add something like this: {"tradeport":"Baijini Point", "commodity":"Medical Supplies"} This will blacklist this commodity for the given trade port.
+If we want to add multiple trade ports or commodities or combinations of both, we add them in a list like this: [{"tradeport":"Baijini Point", "commodity":"Medical Supplies"}, {"commodity":"Medical Supplies"}, {"tradeport":"Port Tressler"}]
+Or to exclude stuff thats to risky or hard to sell/buy: [{"commodity":"WiDoW"},{"commodity":"E'tam"},{"commodity":"Neon"},{"commodity":"Altruciatoxin"},{"commodity":"Medical Supplies"}]
+This value is a JSON string, if you have created a list, use a JSON validator like https://jsonlint.com/ to check if the list is valid.
+
+### Default Trade Route Count (number)
+Set this option to the amount of trade routes you want to show at default.
+You can always tell Wingman AI to show more or less trade routes for one request, if that number is not given, this setting is used.
