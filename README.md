@@ -14,7 +14,7 @@ This wingman is based on a data dump we retrieve from the [uexcorp API](https://
 
 ## How to set it up?
 
-1. Download the files from this repository.
+1. Download the latest release: https://github.com/SawPsyder/wingman-ai-customwingman/releases
 2. Copy `wingmen` and `configs` folders into the Wingman Ai configuration directory. (By default on Windows: `%appdata%\ShipBit\WingmanAI\2_0_0b2`)
 3. Get your own uexcorp API key [here](https://portal.uexcorp.space/terminal) by typing `apikey yourusername your@mail.com` at the bottom and follow the written instructions. Or just reuse the api key from the previous version. On first launch you will be asked for it.
 4. On the first Wingman AI start, it will take a moment to load all data. Thats it. Enjoy and feel free to leave us feedback [here](https://discord.com/channels/1173573578604687360/1179594417926066196/1185567252184047656) 🙂
