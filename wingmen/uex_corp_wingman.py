@@ -63,6 +63,7 @@ class UEXcorpWingman(OpenAiWingman):
         "uexcorp_summarize_routes_by_commodity": {"type":"bool", "values":[]},
         "uexcorp_tradestart_mandatory": {"type":"bool", "values":[]},
         "uexcorp_trade_blacklist": {"type":"json", "values":[]},
+        "uexcorp_default_trade_route_count": {"type":"int", "values":[]},
     }
 
     def __init__(
@@ -104,6 +105,7 @@ class UEXcorpWingman(OpenAiWingman):
         self.uexcorp_summarize_routes_by_commodity = None
         self.uexcorp_tradestart_mandatory = None
         self.uexcorp_trade_blacklist = None
+        self.uexcorp_default_trade_route_count = None
 
         self.ships = []
         self.ship_names = []
@@ -1883,7 +1885,7 @@ class UEXcorpWingman(OpenAiWingman):
         position_end_name: str = None,
         commodity_name: str = None,
         illegal_commodities_allowed: bool = None,
-        maximal_number_of_routes: int = 3,
+        maximal_number_of_routes: int = None,
     ) -> str:
         """
         Finds multiple best trading routes based on the given parameters.
@@ -1978,14 +1980,11 @@ class UEXcorpWingman(OpenAiWingman):
             free_cargo_space = int(free_cargo_space)
         else:
             free_cargo_space = None
-        position_start = self._get_tradeport_by_name(position_start_name) if position_start_name else None
-        position_end = self._get_tradeport_by_name(position_end_name) if position_end_name else None
         commodity = self._get_commodity_by_name(commodity_name) if commodity_name else None
-        maximal_number_of_routes = int(maximal_number_of_routes or 2)
+        maximal_number_of_routes = int(maximal_number_of_routes or self.uexcorp_default_trade_route_count)
+        start_tradeports = self._get_tradeports_by_position_name(position_start_name) if position_start_name else self.tradeports
+        end_tradeports = self._get_tradeports_by_position_name(position_end_name) if position_end_name else self.tradeports
 
-
-        start_tradeports = self._get_tradeports_by_position_name(position_start["name"]) if position_start else self.tradeports
-        end_tradeports = self._get_tradeports_by_position_name(position_end["name"]) if position_end else self.tradeports
         commodities = []
         if commodity is None:
             commodities = self.commodities

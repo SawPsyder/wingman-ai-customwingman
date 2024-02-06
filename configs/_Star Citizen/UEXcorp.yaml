@@ -60,6 +60,10 @@ custom_properties:
   # If we want to add multiple trade ports or commodities or combinations of both, we add them in a list like this: [{"tradeport":"Baijini Point", "commodity":"Medical Supplies"}, {"commodity":"Medical Supplies"}, {"tradeport":"Port Tressler"}]
   # This value is a JSON string, if you have created a list, use a JSON validator like https://jsonlint.com/ to check if the list is valid.
   uexcorp_trade_blacklist: '[]'
+
+  # Set this option to the amount of trade routes you want to show at default.
+  # You can always tell Wingman AI to show more or less trade routes for one request, if that number is not given, this setting is used.
+  uexcorp_default_trade_route_count: "2"
 # ───────────────────────── uexcorp specific config end ──────────────────────────
 
 # ───────────────────────── basic wingman config start ───────────────────────────
