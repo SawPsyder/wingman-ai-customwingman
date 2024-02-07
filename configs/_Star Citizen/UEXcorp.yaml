@@ -13,12 +13,12 @@ custom_properties:
   - id: uexcorp_api_url
     value: https://portal.uexcorp.space/api
     name: API URL
-    description: The URL of the UEX corp API.
+    hint: The URL of the UEX corp API.
     required: true
   - id: uexcorp_api_timeout
     value: '5'
     name: API Timeout
-    description: The timeout for the UEX corp API in seconds.
+    hint: The timeout for the UEX corp API in seconds.
     required: true
 # ────────────────────────────── No touchy zone end ──────────────────────────────
 
@@ -32,7 +32,7 @@ custom_properties:
   - id: uexcorp_debug
     value: "false"
     name: Debug Mode
-    description: Default is "false". Set this option to "true" to activate debug mode or "Extensive" if you want to dive deeper into the responses.
+    hint: Default is "false". Set this option to "true" to activate debug mode or "Extensive" if you want to dive deeper into the responses.
     required: true
 
   # Set this option to "true" to enable caching of the UEX corp API responses. This is recommended, as the API key's quota is very limited.
@@ -42,7 +42,7 @@ custom_properties:
   - id: uexcorp_cache
     value: "true"
     name: Enable Cache
-    description: Set this option to "true" to enable caching of the UEX corp API responses. This is recommended, as the API key's quota is very limited.
+    hint: Set this option to "true" to enable caching of the UEX corp API responses. This is recommended, as the API key's quota is very limited.
     required: true
 
   # Set this option to the amount of seconds you want to cache the UEX corp API responses.
@@ -50,7 +50,7 @@ custom_properties:
   - id: uexcorp_cache_duration
     value: "86400"
     name: Cache Duration
-    description: Set this option to the amount of seconds you want to cache the UEX corp API responses. We recommend a day ("86400").
+    hint: Set this option to the amount of seconds you want to cache the UEX corp API responses. We recommend a day ("86400").
     required: true
 
   # Set this option to "true" to automatically attach all possible location, ship and commodity names to the context.
@@ -63,7 +63,7 @@ custom_properties:
   - id: uexcorp_additional_context
     value: "false"
     name: Additional Context
-    description: Set this option to "true" to automatically attach all possible location, ship and commodity names to the context. (Very costly and therefore not recommended!)
+    hint: Set this option to "true" to automatically attach all possible location, ship and commodity names to the context. (Very costly and therefore not recommended!)
     required: true
 
   # Set this option to "true" to show only one of the most profitable routes for each commodity.
@@ -72,7 +72,7 @@ custom_properties:
   - id: uexcorp_summarize_routes_by_commodity
     value: "true"
     name: Summarize Routes by Commodity
-    description: Set this option to "true" to show only the most profitable routes per commodity. "false" shows multiple options per commodity.
+    hint: Set this option to "true" to show only the most profitable routes per commodity. "false" shows multiple options per commodity.
     required: true
 
   # Set this option to "true" to make the start location for trade route calculation a mandatory information.
@@ -81,7 +81,7 @@ custom_properties:
   - id: uexcorp_tradestart_mandatory
     value: "true"
     name: Trade Start Mandatory
-    description: Set this option to "true" to make the start location for trade route calculation a mandatory information. If "false" and no start location is given, all tradeports are taken into account.
+    hint: Set this option to "true" to make the start location for trade route calculation a mandatory information. If "false" and no start location is given, all tradeports are taken into account.
     required: true
 
   # Use this to blacklist certain trade ports or commodities or combinations of both.
@@ -94,7 +94,7 @@ custom_properties:
   - id: uexcorp_trade_blacklist
     value: '[]'
     name: Trade Blacklist
-    description: JSON string to blacklist certain trade ports or commodities or combinations of both. Default value is empty ('[]'). Sample -> [{"tradeport":"Baijini Point", "commodity":"Medical Supplies"}, {"commodity":"Medical Supplies"}, {"tradeport":"Port Tressler"}]
+    hint: JSON string to blacklist certain trade ports or commodities or combinations of both. Default value is empty ('[]'). Sample -> [{"tradeport":"Baijini Point", "commodity":"Medical Supplies"}, {"commodity":"Medical Supplies"}, {"tradeport":"Port Tressler"}]
     required: true
 
   # Set this option to the amount of trade routes you want to show at default.
@@ -102,7 +102,7 @@ custom_properties:
   - id: uexcorp_default_trade_route_count
     value: "1"
     name: Default Trade Route Count
-    description: Set this option to the amount of trade routes you want to show at default.
+    hint: Set this option to the amount of trade routes you want to show at default.
     required: true
 # ───────────────────────── uexcorp specific config end ──────────────────────────
 

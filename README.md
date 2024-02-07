@@ -4,7 +4,7 @@ We are flattered to present to you our version of a great trading assistant.
 
 ## Version: v8
 
-Works with: Wingman AI 2_0_0b2
+Works with: Wingman AI 2.0.0b2
 
 If you have any feedback, please leave it here: [Discord Channel](https://discord.com/channels/1173573578604687360/1179594417926066196/1185567252184047656)
 
@@ -14,7 +14,7 @@ This wingman is based on a data dump we retrieve from the [uexcorp API](https://
 
 ## How to set it up?
 
-1. Download the files from this repository.
+1. Download the latest release: https://github.com/SawPsyder/wingman-ai-customwingman/releases
 2. Copy `wingmen` and `configs` folders into the Wingman Ai configuration directory. (By default on Windows: `%appdata%\ShipBit\WingmanAI\2_0_0b2`)
 3. Get your own uexcorp API key [here](https://portal.uexcorp.space/terminal) by typing `apikey yourusername your@mail.com` at the bottom and follow the written instructions. Or just reuse the api key from the previous version. On first launch you will be asked for it.
 4. On the first Wingman AI start, it will take a moment to load all data. Thats it. Enjoy and feel free to leave us feedback [here](https://discord.com/channels/1173573578604687360/1179594417926066196/1185567252184047656) 🙂
@@ -26,13 +26,13 @@ This wingman is based on a data dump we retrieve from the [uexcorp API](https://
 This gives you the best trading routes for your ship and current location. You can also specify some parameters to get more specific results.
 
 - **ship name** (required, just the name without manufacturer. So "Cutlass Black" for example)
-- **current location** Anything like Stanton, Hurston, Yela, Area 18, ... (Optional, if uexcorp_tradestart_mandatory is set to false in the config. Otherwise mandatory.)
+- **current location** Anything like Stanton, Hurston, Yela, Area 18, ... (Optional, if [Trade Start Mandatory](https://github.com/SawPsyder/wingman-ai-customwingman?tab=readme-ov-file#trade-start-mandatory-true-false) is set to false in the config. Otherwise mandatory.)
 - target position (Traveling from Hurston to Arccorp? Maybe you should take something with you if your are flying there anyway!)
 - budget
 - free cargo space (if not given, the ships cargo space is used. But got just 56 SCU free in your Caterpillar? -> give this info then.)
 - commodity (Want to trade something specific like gold?)
 - illegal commodities (Dont want to trade drugs? Then tell it not to give you these trading routes.)
-- count (How many routes do you want to see? Default is 3.)
+- count (How many routes do you want to see? Default is set in the "[Default Trade Route Count](https://github.com/SawPsyder/wingman-ai-customwingman?tab=readme-ov-file#default-trade-route-count-number)" configuration option.)
 
 ### Ask for best selling/buying locations
 
@@ -110,11 +110,14 @@ If "false" and no start location is given, all tradeports are taken into account
 ### Trade Blacklist (JSON string)
 Use this to blacklist certain trade ports or commodities or combinations of both.
 Default value is '[]', which means no trade ports or commodities are blacklisted.
-If we want to add a trade port to the blacklist, we add something like this: {"tradeport":"Baijini Point"} This will blacklist the trade port completely from trade route calculations.
-If we want to add a commodity to the blacklist, we add something like this: {"commodity":"Medical Supplies"} This will blacklist the commodity completely from trade route calculations.
-If we want to add a combination to the blacklist, we add something like this: {"tradeport":"Baijini Point", "commodity":"Medical Supplies"} This will blacklist this commodity for the given trade port.
-If we want to add multiple trade ports or commodities or combinations of both, we add them in a list like this: [{"tradeport":"Baijini Point", "commodity":"Medical Supplies"}, {"commodity":"Medical Supplies"}, {"tradeport":"Port Tressler"}]
-Or to exclude stuff thats to risky or hard to sell/buy: [{"commodity":"WiDoW"},{"commodity":"E'tam"},{"commodity":"Neon"},{"commodity":"Altruciatoxin"},{"commodity":"Medical Supplies"}]
+If we want to add a trade port to the blacklist, we add something like this: `{"tradeport":"Baijini Point"}`
+This will blacklist the trade port completely from trade route calculations.
+If we want to add a commodity to the blacklist, we add something like this: `{"commodity":"Medical Supplies"}`
+This will blacklist the commodity completely from trade route calculations.
+If we want to add a combination to the blacklist, we add something like this: `{"tradeport":"Baijini Point", "commodity":"Medical Supplies"}`
+This will blacklist this commodity for the given trade port.
+If we want to add multiple trade ports or commodities or combinations of both, we add them in a list like this: `[{"tradeport":"Baijini Point", "commodity":"Medical Supplies"}, {"commodity":"Medical Supplies"}, {"tradeport":"Port Tressler"}]`
+Or to exclude stuff thats to risky or hard to sell/buy: `[{"commodity":"WiDoW"},{"commodity":"E'tam"},{"commodity":"Neon"},{"commodity":"Altruciatoxin"},{"commodity":"Medical Supplies"}]`
 This value is a JSON string, if you have created a list, use a JSON validator like https://jsonlint.com/ to check if the list is valid.
 
 ### Default Trade Route Count (number)
