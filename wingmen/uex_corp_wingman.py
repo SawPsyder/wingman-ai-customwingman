@@ -23,6 +23,7 @@ from api.enums import (
 )
 from services.printr import Printr
 from services.file import get_writable_dir
+from services.audio_player import AudioPlayer
 from wingmen.open_ai_wingman import OpenAiWingman
 
 printr = Printr()
@@ -70,6 +71,7 @@ class UEXcorpWingman(OpenAiWingman):
         self,
         name: str,
         config: WingmanConfig,
+        audio_player: AudioPlayer,
     ) -> None:
         """
         Initialize the UEX Corp Wingman object.
@@ -85,8 +87,8 @@ class UEXcorpWingman(OpenAiWingman):
         super().__init__(
             name=name,
             config=config,
+            audio_player=audio_player
         )
-
 
         self.data_path = get_writable_dir(path.join("wingmen_data", self.name))
         self.logfile = path.join(self.data_path, "error.log")
@@ -2012,7 +2014,7 @@ class UEXcorpWingman(OpenAiWingman):
         errors = []
         for commodity in commodities:
             commodity_routes = []
-            if not illegal_commodities_allowed and commodity["illegal"] == "Yes":
+            if not illegal_commodities_allowed and commodity["illegal"] == '1':
                 continue
             for start_tradeport in start_tradeports:
                 if "prices" not in start_tradeport or commodity["code"] not in start_tradeport["prices"] or start_tradeport["prices"][commodity["code"]]["operation"] != "buy":
@@ -2036,20 +2038,17 @@ class UEXcorpWingman(OpenAiWingman):
                         illegal_commodities_allowed,
                     )
                     # self._print_debug(trading_route_new, True)
+                    
                     if isinstance(trading_route_new, str):
                         if trading_route_new not in errors:
                             errors.append(trading_route_new)
                     else:
                         commodity_routes.append(trading_route_new)
+
             if len(commodity_routes) > 0:
                 if self.uexcorp_summarize_routes_by_commodity:
-                    best_commodity_route = {}
-                    for commodity_route in commodity_routes:
-                        if not best_commodity_route:
-                            best_commodity_route = commodity_route
-                        elif commodity_route["profit"] > best_commodity_route["profit"]:
-                            best_commodity_route = commodity_route
-                    trading_routes.append(best_commodity_route)
+                    best_commodity_routes = heapq.nlargest(1, commodity_routes, key=lambda k: int(k["profit"]))
+                    trading_routes.extend(best_commodity_routes)
                 else:
                     trading_routes.extend(commodity_routes)
 
@@ -2225,7 +2224,7 @@ class UEXcorpWingman(OpenAiWingman):
                     commodity_filter is None or commodity_filter["code"] == attr
                 ):
                     commodity = self._get_commodity_by_code(attr)
-                    if illegal_commodities_allowed is True or commodity["illegal"] != "Yes":
+                    if illegal_commodities_allowed is True or commodity["illegal"] != "1":
                         price["short_name"] = attr
 
                         in_blacklist = False
