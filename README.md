@@ -2,9 +2,9 @@
 
 We are flattered to present to you our version of a great trading assistant.
 
-## Version: v8
+## Version: v9
 
-Works with: Wingman AI 2.0.0b2
+Works with: Wingman AI 2.1.0b2
 
 If you have any feedback, please leave it here: [Discord Channel](https://discord.com/channels/1173573578604687360/1179594417926066196/1185567252184047656)
 
@@ -15,9 +15,9 @@ This wingman is based on a data dump we retrieve from the [uexcorp API](https://
 ## How to set it up?
 
 1. Download the latest release: https://github.com/SawPsyder/wingman-ai-customwingman/releases
-2. Copy `wingmen` and `configs` folders into the Wingman Ai configuration directory. (By default on Windows: `%appdata%\ShipBit\WingmanAI\2_0_0b2`)
+2. Copy `wingmen` and `configs` folders into the Wingman Ai configuration directory. (By default on Windows: `%appdata%\ShipBit\WingmanAI\2_1_0b2`)
 3. Get your own uexcorp API key [here](https://portal.uexcorp.space/terminal) by typing `apikey yourusername your@mail.com` at the bottom and follow the written instructions. Or just reuse the api key from the previous version. On first launch you will be asked for it.
-4. On the first Wingman AI start, it will take a moment to load all data. Thats it. Enjoy and feel free to leave us feedback [here](https://discord.com/channels/1173573578604687360/1179594417926066196/1185567252184047656) 🙂
+4. On every Wingman AI start after 24h (by default), it will take a moment to load all data. Thats it. Enjoy and feel free to leave us feedback [here](https://discord.com/channels/1173573578604687360/1179594417926066196/1185567252184047656) 🙂
 
 ## What can I do then?
 
