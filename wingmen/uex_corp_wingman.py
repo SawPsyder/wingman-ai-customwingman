@@ -95,7 +95,7 @@ class UEXcorpWingman(OpenAiWingman):
         self.cachefile = path.join(self.data_path, "cache.json")
         logging.basicConfig(filename=self.logfile, level=logging.ERROR)
 
-        self.uexcorp_version = "v8"
+        self.uexcorp_version = "v9"
 
         self.uexcorp_api_url = None
         self.uexcorp_api_key = None
