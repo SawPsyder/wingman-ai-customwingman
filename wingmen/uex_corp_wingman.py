@@ -79,7 +79,7 @@ class UEXcorpWingman(OpenAiWingman):
         Args:
             name (str): The name of the wingman.
             config (dict[str, any]): The configuration settings for the wingman.
-            app_root_dir (str): The root directory of the application.
+            audio_player (AudioPlayer): The audio player
 
         Returns:
             None
@@ -154,12 +154,12 @@ class UEXcorpWingman(OpenAiWingman):
             "readable_objects": {},
         }
 
-    def _print_debug(self, message: str, is_extensive: bool = False) -> None:
+    def _print_debug(self, message: str | dict, is_extensive: bool = False) -> None:
         """
         Prints a debug message if debug mode is enabled.
 
         Args:
-            message (str): The message to be printed.
+            message (str | dict): The message to be printed.
             is_extensive (bool, optional): Whether the message is extensive. Defaults to False.
 
         Returns:
@@ -174,7 +174,7 @@ class UEXcorpWingman(OpenAiWingman):
 
     def _get_function_arg_from_cache(
         self, arg_name: str, arg_value: str | int = None
-    ) -> dict[str, any]:
+    ) -> str | int | None:
         """
         Retrieves a function argument from the cache if available, otherwise returns the provided argument value.
 
@@ -199,7 +199,7 @@ class UEXcorpWingman(OpenAiWingman):
         return arg_value
 
     def _set_function_arg_to_cache(
-        self, arg_name: str, arg_value: str | int = None
+        self, arg_name: str, arg_value: str | int | float = None
     ) -> None:
         """
         Sets the value of a function argument to the cache.
@@ -288,7 +288,7 @@ class UEXcorpWingman(OpenAiWingman):
                         )
                     )
             elif typesettings == "bool":
-                if not value in ["true", "false"]:
+                if value not in ["true", "false"]:
                     errors.append(
                         WingmanInitializationError(
                             wingman_name=self.name,
@@ -299,7 +299,7 @@ class UEXcorpWingman(OpenAiWingman):
             elif typesettings == "json":
                 try:
                     json.loads(value)
-                except (json.decoder.JSONDecodeError):
+                except json.decoder.JSONDecodeError:
                     errors.append(
                         WingmanInitializationError(
                             wingman_name=self.name,
@@ -1375,10 +1375,13 @@ class UEXcorpWingman(OpenAiWingman):
         if "prices" in tradeport:
             buyable_commodities = [f"{data['name']} for {data['price_buy']} aUEC per SCU" for commodity_code, data in tradeport["prices"].items() if data["operation"] == "buy"]
             sellable_commodities = [f"{data['name']} for {data['price_sell']} aUEC per SCU" for commodity_code, data in tradeport["prices"].items() if data["operation"] == "sell"]
+        else:
+            buyable_commodities = []
+            sellable_commodities = []
 
-        if buyable_commodities:
+        if len(buyable_commodities):
             tradeport["buyable_commodities"] = ", ".join(buyable_commodities)
-        if sellable_commodities:
+        if len(sellable_commodities):
             tradeport["sellable_commodities"] = ", ".join(sellable_commodities)
 
         for key in ["system", "planet", "city", "satellite"]:
