@@ -13,6 +13,7 @@ import heapq
 from datetime import datetime
 import requests
 from api.interface import (
+    SettingsConfig,
     WingmanConfig,
     WingmanInitializationError
 )
@@ -33,6 +34,7 @@ class UEXcorpWingman(OpenAiWingman):
     The UEX Corp Wingman class.
     """
 
+    # TODO: retrieve this from an API
     MANUFACTURERS = {
         "AEGS": "Aegis Dynamics",
         "ANVL": "Anvil Aerospace",
@@ -71,6 +73,7 @@ class UEXcorpWingman(OpenAiWingman):
         self,
         name: str,
         config: WingmanConfig,
+        settings: SettingsConfig,
         audio_player: AudioPlayer,
     ) -> None:
         """
@@ -87,6 +90,7 @@ class UEXcorpWingman(OpenAiWingman):
         super().__init__(
             name=name,
             config=config,
+            settings=settings,
             audio_player=audio_player
         )
 
@@ -95,8 +99,9 @@ class UEXcorpWingman(OpenAiWingman):
         self.cachefile = path.join(self.data_path, "cache.json")
         logging.basicConfig(filename=self.logfile, level=logging.ERROR)
 
-        self.uexcorp_version = "v9"
+        self.uexcorp_version = "v10"
 
+        # init of config options
         self.uexcorp_api_url = None
         self.uexcorp_api_key = None
         self.uexcorp_api_timeout = None
@@ -106,9 +111,10 @@ class UEXcorpWingman(OpenAiWingman):
         self.uexcorp_additional_context = None
         self.uexcorp_summarize_routes_by_commodity = None
         self.uexcorp_tradestart_mandatory = None
-        self.uexcorp_trade_blacklist = None
+        self.uexcorp_trade_blacklist = []
         self.uexcorp_default_trade_route_count = None
 
+        # init of data lists
         self.ships = []
         self.ship_names = []
         self.ship_dict = {}
@@ -651,8 +657,7 @@ class UEXcorpWingman(OpenAiWingman):
             str: The response from the model.
         """
         ask_params = {
-            'messages': messages,
-            'model': self.config.openai.conversation_model
+            'messages': messages
         }
 
         if self.conversation_provider == ConversationProvider.AZURE:
@@ -661,8 +666,16 @@ class UEXcorpWingman(OpenAiWingman):
                 'config': self.config.azure.conversation
             })
             completion = self.openai_azure.ask(**ask_params)
-        else:
+        elif self.conversation_provider == ConversationProvider.OPENAI:
+            ask_params.update({
+                'model': self.config.openai.conversation_model
+            })
             completion = self.openai.ask(**ask_params)
+        elif self.conversation_provider == ConversationProvider.WINGMAN_PRO:
+            ask_params.update({
+                'deployment':self.config.wingman_pro.conversation_deployment
+            })
+            completion = self.wingman_pro.ask(**ask_params)
 
         return completion.choices[0].message.content if completion and completion.choices else ""
 
@@ -961,8 +974,8 @@ class UEXcorpWingman(OpenAiWingman):
                             "illegal_commodities_allowed": {"type": "boolean"},
                             "maximal_number_of_routes": {"type": "number"},
                         },
-                        "required": ["ship_name", "position_start_name"] if self.uexcorp_tradestart_mandatory else ["ship_name"],
-                        "optional": ["money_to_spend", "free_cargo_space", "position_end_name", "commodity_name", "illegal_commodities_allowed", "maximal_number_of_routes"] if self.uexcorp_tradestart_mandatory else ["position_start_name", "money_to_spend", "free_cargo_space", "position_end_name", "commodity_name", "illegal_commodities_allowed", "maximal_number_of_routes"],
+                        "required": [],
+                        "optional": ["ship_name", "position_start_name", "money_to_spend", "free_cargo_space", "position_end_name", "commodity_name", "illegal_commodities_allowed", "maximal_number_of_routes"] if self.uexcorp_tradestart_mandatory else ["position_start_name", "money_to_spend", "free_cargo_space", "position_end_name", "commodity_name", "illegal_commodities_allowed", "maximal_number_of_routes"],
                     },
                 },
             },
@@ -1940,16 +1953,12 @@ class UEXcorpWingman(OpenAiWingman):
         if illegal_commodities_allowed is None:
             illegal_commodities_allowed = True
 
+        missing_args = []
         if ship_name is None:
-            self._print_debug("No ship given. Ask for a ship and make sure a start location is given. Everything else is optional.  Dont say sorry.", True)
-            return "No ship given. Ask for a ship and make sure a start location is given. Everything else is optional.  Dont say sorry."
+            missing_args.append("ship_name")
 
         if self.uexcorp_tradestart_mandatory and position_start_name is None:
-            self._print_debug(
-                "No start position given. Ask for a start position. (Station, Planet, Satellite, City or System), as the ship information is given, thats all we need.",
-                True
-            )
-            return "No start position given. Ask for a start position. (Station, Planet, Satellite, City or System), as the ship information is given, thats all we need."
+            missing_args.append("position_start_name")
 
         money_to_spend = None if money_to_spend is not None and int(money_to_spend) < 1 else money_to_spend
         free_cargo_space = None if free_cargo_space is not None and int(free_cargo_space) < 1 else free_cargo_space
@@ -1984,13 +1993,17 @@ class UEXcorpWingman(OpenAiWingman):
 
         self._set_function_arg_to_cache("money", money_to_spend)
 
-        if misunderstood:
+        if misunderstood or missing_args:
             misunderstood_str = ", ".join(misunderstood)
-            self._print_debug(
-                f"These given parameters do not exist in game. Exactly ask for clarification of these values: {misunderstood_str}",
-                True
-            )
-            return f"These given parameters do not exist in game. Exactly ask for clarification of these values: {misunderstood_str}"
+            missing_str = ", ".join(missing_args)
+            answer = ""
+            if missing_str:
+                answer += f"Missing parameters: {missing_str}. "
+            if misunderstood_str:
+                answer += f"These given parameters were misunderstood: {misunderstood_str}"
+
+            self._print_debug(answer, True)
+            return answer
 
         # set variables
         ship = self._get_ship_by_name(ship_name)
@@ -2187,7 +2200,7 @@ class UEXcorpWingman(OpenAiWingman):
         }
 
         # apply trade port blacklist
-        if len(self.uexcorp_trade_blacklist):
+        if self.uexcorp_trade_blacklist:
             for blacklist_item in self.uexcorp_trade_blacklist:
                 if "tradeport" in blacklist_item and blacklist_item["tradeport"]:
                     for tradeport in start_tradeports:
@@ -2232,7 +2245,7 @@ class UEXcorpWingman(OpenAiWingman):
 
                         in_blacklist = False
                         # apply commodity blacklist
-                        if len(self.uexcorp_trade_blacklist):
+                        if self.uexcorp_trade_blacklist:
                             for blacklist_item in self.uexcorp_trade_blacklist:
                                 if "commodity" in blacklist_item and blacklist_item["commodity"] and not "tradeport" in blacklist_item or not blacklist_item["tradeport"]:
                                     if commodity["name"] == blacklist_item["commodity"]:
@@ -2255,7 +2268,7 @@ class UEXcorpWingman(OpenAiWingman):
                     sell_commodity = self._get_commodity_by_code(attr)
                     in_blacklist = False
                     # apply commodity blacklist
-                    if sell_commodity and len(self.uexcorp_trade_blacklist):
+                    if sell_commodity and self.uexcorp_trade_blacklist:
                         for blacklist_item in self.uexcorp_trade_blacklist:
                             if "commodity" in blacklist_item and blacklist_item["commodity"] and not "tradeport" in blacklist_item or not blacklist_item["tradeport"]:
                                 if sell_commodity["name"] == blacklist_item["commodity"]:
